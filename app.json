@@ -38,7 +38,18 @@
             "backgroundColor": "#000000"
           }
         }
-      ]
+      ],
+      "expo-secure-store",
+      "@react-native-community/datetimepicker",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow BedandGo to access your photos so you can upload inspection images.",
+          "cameraPermission": "Allow BedandGo to access your camera to take photos of property items.",
+          "microphonePermission": "Allow BedandGo to access your microphone to record video audio during inspections."
+        }
+      ],
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true,
