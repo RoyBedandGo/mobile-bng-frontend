@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "bng-mobile-app",
+    "name": "BNG",
     "slug": "bng-mobile-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/bng-icon.png",
     "scheme": "bngmobileapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,

@@ -501,42 +501,16 @@ export default function ViewReportScreen() {
     if (!file) return;
 
     try {
-      if (Platform.OS === "android") {
-        // ANDROID: Opens the Android file picker to choose the "Downloads" folder
-        const permissions =
-          await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
-
-        if (permissions.granted) {
-          // Read the cached file as base64
-          const base64 = await FileSystem.readAsStringAsync(file.uri, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-
-          // Create the new file in the user's selected folder
-          const newUri =
-            await FileSystem.StorageAccessFramework.createFileAsync(
-              permissions.directoryUri,
-              file.name,
-              "application/pdf",
-            );
-
-          // Write the data
-          await FileSystem.writeAsStringAsync(newUri, base64, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-
-          Alert.alert("Success", "PDF saved to your device!");
-        }
-      } else {
-        // IOS: The standard way to download a file on iOS is through the Share Sheet -> "Save to Files"
-        await Sharing.shareAsync(file.uri, {
-          mimeType: "application/pdf",
-          UTI: "com.adobe.pdf",
-        });
-      }
+      // Use Expo Sharing for BOTH Android and iOS!
+      // This will pop up the phone's native Share menu (Viber, Messenger, Gmail, etc.)
+      await Sharing.shareAsync(file.uri, {
+        mimeType: "application/pdf",
+        dialogTitle: "Share BedandGo Report", // Android specific title
+        UTI: "com.adobe.pdf", // iOS specific
+      });
     } catch (error) {
-      console.error("Save PDF Error:", error);
-      Alert.alert("Error", "Could not save the PDF to your device.");
+      console.error("Share PDF Error:", error);
+      Alert.alert("Error", "Could not share the PDF.");
     }
 
     setIsPdfModalVisible(false);

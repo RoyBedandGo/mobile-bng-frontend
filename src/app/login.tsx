@@ -1,3 +1,4 @@
+import { Ionicons } from "@expo/vector-icons"; // <-- Added this import
 import { router, Stack } from "expo-router";
 import { useEffect, useState } from "react";
 import {
@@ -15,6 +16,7 @@ import { api } from "../lib/api";
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false); // <-- Added state for toggle
   const [isLoading, setIsLoading] = useState(false);
   const { signIn, user } = useAuth();
 
@@ -47,7 +49,6 @@ export default function Login() {
         Alert.alert("Success", `Welcome to the BedandGo App, ${user.name}!`);
         router.replace("/(tabs)/properties");
       } else {
-        // Fallback just in case the server sends a 200 OK but the status isn't "Success!"
         Alert.alert(
           "Login Failed",
           response.data.Error || "User doesn't exist or wrong credentials.",
@@ -56,7 +57,6 @@ export default function Login() {
     } catch (error: any) {
       console.error("Login Error:", error);
 
-      // Check if the error comes from the server (e.g., 401 Unauthorized or 404 Not Found)
       if (error.response) {
         const serverMessage = error.response.data?.Error;
         Alert.alert(
@@ -64,7 +64,6 @@ export default function Login() {
           serverMessage || "User doesn't exist or wrong credentials.",
         );
       } else {
-        // This triggers if the server is completely down or the phone has no internet
         Alert.alert(
           "Connection Error",
           "Could not reach the server. Make sure you are on the company Wi-Fi.",
@@ -96,14 +95,28 @@ export default function Login() {
           autoCapitalize="none"
           editable={!isLoading}
         />
+
         <Text style={styles.label}>password:</Text>
-        <TextInput
-          style={styles.input}
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          editable={!isLoading}
-        />
+        {/* <-- Updated Password Field Container --> */}
+        <View style={styles.passwordContainer}>
+          <TextInput
+            style={styles.passwordInput}
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry={!showPassword} // Toggle based on state
+            editable={!isLoading}
+          />
+          <TouchableOpacity
+            style={styles.eyeIcon}
+            onPress={() => setShowPassword(!showPassword)}
+          >
+            <Ionicons
+              name={showPassword ? "eye-off" : "eye"} // Changes icon icon depending on state
+              size={24}
+              color="#777"
+            />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <TouchableOpacity
@@ -155,6 +168,26 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     fontSize: 16,
   },
+  // <-- New Styles for the Password Wrapper -->
+  passwordContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    marginBottom: 15,
+  },
+  passwordInput: {
+    flex: 1,
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    fontSize: 16,
+  },
+  eyeIcon: {
+    paddingHorizontal: 15,
+  },
+  // <---------------------------------------->
   button: {
     backgroundColor: "#007BFF",
     paddingVertical: 15,
