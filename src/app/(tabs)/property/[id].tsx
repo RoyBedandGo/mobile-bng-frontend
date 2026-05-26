@@ -2,12 +2,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "../../../lib/api";
@@ -93,14 +93,14 @@ export default function PropertyDetails() {
             <Text style={styles.txtView}>VIEW REPORTS</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
+          {/* <TouchableOpacity
             style={[styles.actionBtn, styles.btnCreate]}
             onPress={() =>
               router.push(`/(tabs)/property/create-report?property_id=${id}`)
             }
           >
             <Text style={styles.txtCreate}>CREATE REPORT</Text>
-          </TouchableOpacity>
+          </TouchableOpacity> */}
         </View>
 
         {/* Database Mapped Fields */}

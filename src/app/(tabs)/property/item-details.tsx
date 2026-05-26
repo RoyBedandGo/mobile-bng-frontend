@@ -24,14 +24,6 @@ import { api } from "../../../lib/api";
 import { SyncManager } from "../../../lib/SyncManager"; // <-- NEW
 
 // --- CONSTANTS ---
-const AREA_OPTIONS = [
-  "Kitchen Area",
-  "Living Room",
-  "Bedroom",
-  "Bathroom",
-  "Dining Area",
-  "Balcony",
-];
 const ITEM_TYPES = [
   "Sanitary",
   "Electrical",
@@ -39,25 +31,48 @@ const ITEM_TYPES = [
   "Fixture",
   "Furniture",
 ];
-const CONDITIONS = [
-  "Busted",
-  "Stain",
-  "Dirty",
-  "Good",
-  "Working",
-  "Expired",
-  "Not Cooling",
-  "Broken",
-  "Damaged",
-];
-const STATUSES = [
-  "Repair",
-  "Replace",
-  "Cleaning",
-  "Laundry",
-  "Shampooing",
-  "Working",
-];
+
+// --- HELPERS ---
+const normalizeText = (text: string) => {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "")
+    .split(/\s+/)
+    .filter(
+      (word) =>
+        word &&
+        ![
+          "area",
+          "room",
+          "space",
+          "section",
+          "the",
+          "a",
+          "an",
+          "for",
+          "to",
+          "of",
+        ].includes(word),
+    )
+    .join(" ")
+    .trim();
+};
+
+const findSimilarOption = (input: string, options: string[]) => {
+  const normalizedInput = normalizeText(input);
+
+  if (!normalizedInput) return null;
+
+  return options.find((existing) => {
+    const normalizedExisting = normalizeText(existing);
+
+    return (
+      normalizedExisting === normalizedInput ||
+      normalizedExisting.includes(normalizedInput) ||
+      normalizedInput.includes(normalizedExisting)
+    );
+  });
+};
 
 // --- CUSTOM UI COMPONENTS ---
 const Chip = ({ label, onRemove }: { label: string; onRemove: () => void }) => (
@@ -80,6 +95,7 @@ const MultiSelectPicker = ({
   const availableOptions = options.filter(
     (opt: string) => !selectedValues.includes(opt),
   );
+
   return (
     <>
       <TouchableOpacity
@@ -98,16 +114,24 @@ const MultiSelectPicker = ({
         )}
         <Ionicons name="caret-down" size={16} color="#666" />
       </TouchableOpacity>
+
       <Modal visible={modalVisible} transparent={true} animationType="fade">
         <TouchableOpacity
           style={styles.modalOverlay}
           activeOpacity={1}
           onPress={() => setModalVisible(false)}
         >
-          <View style={styles.modalContent}>
+          <TouchableOpacity
+            activeOpacity={1}
+            style={styles.modalContent}
+            onPress={() => {}}
+          >
             <FlatList
               data={availableOptions}
               keyExtractor={(item) => item}
+              style={styles.optionList}
+              nestedScrollEnabled
+              showsVerticalScrollIndicator
               renderItem={({ item }) => (
                 <TouchableOpacity
                   style={styles.modalItem}
@@ -119,16 +143,52 @@ const MultiSelectPicker = ({
                   <Text style={styles.modalItemText}>{item}</Text>
                 </TouchableOpacity>
               )}
+              ListEmptyComponent={
+                <Text style={styles.emptyText}>All options selected</Text>
+              }
             />
-          </View>
+          </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
     </>
   );
 };
 
-const SingleSelectPicker = ({ value, options, onSelect, placeholder }: any) => {
+const SingleSelectPicker = ({
+  value,
+  options,
+  onSelect,
+  placeholder,
+  onAddOption,
+  title,
+}: any) => {
   const [modalVisible, setModalVisible] = useState(false);
+  const [newOption, setNewOption] = useState("");
+  const [warning, setWarning] = useState("");
+
+  const handleAdd = async () => {
+    const cleanValue = newOption.trim();
+
+    if (!cleanValue) {
+      setWarning("Please enter a value.");
+      return;
+    }
+
+    const similarOption = findSimilarOption(cleanValue, options);
+
+    if (similarOption) {
+      setWarning(`Warning: possible duplicate: "${similarOption}"`);
+      return;
+    }
+
+    setWarning("");
+
+    await onAddOption(cleanValue);
+
+    setNewOption("");
+    setModalVisible(false);
+  };
+
   return (
     <>
       <TouchableOpacity
@@ -141,16 +201,26 @@ const SingleSelectPicker = ({ value, options, onSelect, placeholder }: any) => {
         </Text>
         <Ionicons name="caret-down" size={16} color="#666" />
       </TouchableOpacity>
+
       <Modal visible={modalVisible} transparent={true} animationType="fade">
         <TouchableOpacity
           style={styles.modalOverlay}
           activeOpacity={1}
           onPress={() => setModalVisible(false)}
         >
-          <View style={styles.modalContent}>
+          <TouchableOpacity
+            activeOpacity={1}
+            style={styles.dynamicModalContent}
+            onPress={() => {}}
+          >
+            <Text style={styles.dynamicModalTitle}>{title}</Text>
+
             <FlatList
               data={options}
-              keyExtractor={(item) => item}
+              keyExtractor={(item, index) => `${item}-${index}`}
+              style={styles.dynamicOptionList}
+              nestedScrollEnabled
+              showsVerticalScrollIndicator
               renderItem={({ item }) => (
                 <TouchableOpacity
                   style={styles.modalItem}
@@ -162,8 +232,156 @@ const SingleSelectPicker = ({ value, options, onSelect, placeholder }: any) => {
                   <Text style={styles.modalItemText}>{item}</Text>
                 </TouchableOpacity>
               )}
+              ListEmptyComponent={
+                <Text style={styles.emptyText}>No options yet.</Text>
+              }
             />
+
+            <View style={styles.addOptionRow}>
+              <TextInput
+                value={newOption}
+                onChangeText={(text) => {
+                  setNewOption(text);
+                  setWarning("");
+                }}
+                placeholder="Add new option"
+                placeholderTextColor="#999"
+                style={styles.addOptionInput}
+              />
+
+              <TouchableOpacity
+                style={styles.addOptionButton}
+                onPress={handleAdd}
+              >
+                <Ionicons name="add" size={28} color="#FFF" />
+              </TouchableOpacity>
+            </View>
+
+            {warning ? <Text style={styles.warningText}>{warning}</Text> : null}
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+    </>
+  );
+};
+
+const DynamicMultiSelectPicker = ({
+  selectedValues,
+  options,
+  onAdd,
+  onRemove,
+  placeholder,
+  onAddOption,
+  title,
+}: any) => {
+  const [modalVisible, setModalVisible] = useState(false);
+  const [newOption, setNewOption] = useState("");
+  const [warning, setWarning] = useState("");
+
+  const availableOptions = options.filter(
+    (opt: string) => !selectedValues.includes(opt),
+  );
+
+  const handleAdd = async () => {
+    const cleanValue = newOption.trim();
+
+    if (!cleanValue) {
+      setWarning("Please enter a value.");
+      return;
+    }
+
+    const similarOption = findSimilarOption(cleanValue, options);
+
+    if (similarOption) {
+      setWarning(`Warning: possible duplicate: "${similarOption}"`);
+      return;
+    }
+
+    setWarning("");
+
+    await onAddOption(cleanValue);
+
+    setNewOption("");
+    setModalVisible(false);
+  };
+
+  return (
+    <>
+      <TouchableOpacity
+        style={styles.inputBox}
+        onPress={() => setModalVisible(true)}
+        activeOpacity={0.8}
+      >
+        {selectedValues.length > 0 ? (
+          <View style={styles.chipContainer}>
+            {selectedValues.map((val: string) => (
+              <Chip key={val} label={val} onRemove={() => onRemove(val)} />
+            ))}
           </View>
+        ) : (
+          <Text style={styles.placeholderText}>{placeholder}</Text>
+        )}
+
+        <Ionicons name="caret-down" size={16} color="#666" />
+      </TouchableOpacity>
+
+      <Modal visible={modalVisible} transparent={true} animationType="fade">
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setModalVisible(false)}
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            style={styles.dynamicModalContent}
+            onPress={() => {}}
+          >
+            <Text style={styles.dynamicModalTitle}>{title}</Text>
+
+            <FlatList
+              data={availableOptions}
+              keyExtractor={(item, index) => `${item}-${index}`}
+              style={styles.dynamicOptionList}
+              nestedScrollEnabled
+              showsVerticalScrollIndicator
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.modalItem}
+                  onPress={() => {
+                    onAdd(item);
+                    setModalVisible(false);
+                  }}
+                >
+                  <Text style={styles.modalItemText}>{item}</Text>
+                </TouchableOpacity>
+              )}
+              ListEmptyComponent={
+                <Text style={styles.emptyText}>No options available.</Text>
+              }
+            />
+
+            <View style={styles.addOptionRow}>
+              <TextInput
+                value={newOption}
+                onChangeText={(text) => {
+                  setNewOption(text);
+                  setWarning("");
+                }}
+                placeholder="Add new option"
+                placeholderTextColor="#999"
+                style={styles.addOptionInput}
+              />
+
+              <TouchableOpacity
+                style={styles.addOptionButton}
+                onPress={handleAdd}
+              >
+                <Ionicons name="add" size={28} color="#FFF" />
+              </TouchableOpacity>
+            </View>
+
+            {warning ? <Text style={styles.warningText}>{warning}</Text> : null}
+          </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
     </>
@@ -188,6 +406,11 @@ export default function ItemDetailsScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Dynamic Option States
+  const [areaOptions, setAreaOptions] = useState<string[]>([]);
+  const [conditionOptions, setConditionOptions] = useState<string[]>([]);
+  const [statusOptions, setStatusOptions] = useState<string[]>([]);
 
   // Form States
   const [area, setArea] = useState<string>("");
@@ -228,6 +451,187 @@ export default function ItemDetailsScreen() {
   useEffect(() => {
     if (!selectedMedia) fullScreenPlayer?.pause();
   }, [selectedMedia]);
+
+  // --- FETCH DYNAMIC OPTIONS ---
+  const fetchAreaLocations = async () => {
+    try {
+      const response = await api.get("/pm/item-settings/area-location");
+
+      const areas = response.data
+        .map((item: any) => item.area_name)
+        .filter(Boolean);
+
+      setAreaOptions(areas);
+    } catch (error: any) {
+      console.error("Failed to fetch area locations:", error);
+      Alert.alert("Error", "Failed to load area locations.");
+    }
+  };
+
+  const fetchItemConditions = async () => {
+    try {
+      const response = await api.get("/pm/item-settings/item-condition");
+
+      const conditions = response.data
+        .map((item: any) => item.condition_name)
+        .filter(Boolean);
+
+      setConditionOptions(conditions);
+    } catch (error: any) {
+      console.error("Failed to fetch item conditions:", error);
+      Alert.alert("Error", "Failed to load item conditions.");
+    }
+  };
+
+  const fetchItemStatus = async () => {
+    try {
+      const response = await api.get("/pm/item-settings/item-status");
+
+      const statuses = response.data
+        .map((item: any) => item.status_name)
+        .filter(Boolean);
+
+      setStatusOptions(statuses);
+    } catch (error: any) {
+      console.error("Failed to fetch item status:", error);
+      Alert.alert("Error", "Failed to load item status.");
+    }
+  };
+
+  const fetchAllDynamicOptions = async () => {
+    await Promise.all([
+      fetchAreaLocations(),
+      fetchItemConditions(),
+      fetchItemStatus(),
+    ]);
+  };
+
+  useEffect(() => {
+    fetchAllDynamicOptions();
+  }, []);
+
+  // Keep old existing values visible even if they are not yet saved in master tables.
+  useEffect(() => {
+    if (area) {
+      setAreaOptions((prev) => (prev.includes(area) ? prev : [...prev, area]));
+    }
+
+    condition.forEach((item) => {
+      setConditionOptions((prev) =>
+        prev.includes(item) ? prev : [...prev, item],
+      );
+    });
+
+    status.forEach((item) => {
+      setStatusOptions((prev) =>
+        prev.includes(item) ? prev : [...prev, item],
+      );
+    });
+  }, [area, condition, status]);
+
+  // --- ADD DYNAMIC OPTIONS ---
+  const addAreaLocation = async (areaName: string) => {
+    try {
+      const similarOption = findSimilarOption(areaName, areaOptions);
+
+      if (similarOption) {
+        Alert.alert(
+          "Duplicate Warning",
+          `This may already exist as "${similarOption}".`,
+        );
+        return;
+      }
+
+      const response = await api.post("/pm/item-settings/area-location/add", {
+        area_name: areaName,
+      });
+
+      if (response.status === 201) {
+        const updatedAreas = [...areaOptions, areaName];
+
+        setAreaOptions(updatedAreas);
+        setArea(areaName);
+
+        Alert.alert("Success", "Area location added successfully.");
+      }
+    } catch (error: any) {
+      console.error("Failed to add area location:", error);
+      Alert.alert(
+        "Error",
+        error.response?.data?.Error || "Failed to add area location.",
+      );
+    }
+  };
+
+  const addItemCondition = async (conditionName: string) => {
+    try {
+      const similarOption = findSimilarOption(conditionName, conditionOptions);
+
+      if (similarOption) {
+        Alert.alert(
+          "Duplicate Warning",
+          `This may already exist as "${similarOption}".`,
+        );
+        return;
+      }
+
+      const response = await api.post("/pm/item-settings/item-condition/add", {
+        condition_name: conditionName,
+      });
+
+      if (response.status === 201) {
+        const updatedConditions = [...conditionOptions, conditionName];
+
+        setConditionOptions(updatedConditions);
+        setCondition((prev) =>
+          prev.includes(conditionName) ? prev : [...prev, conditionName],
+        );
+
+        Alert.alert("Success", "Item condition added successfully.");
+      }
+    } catch (error: any) {
+      console.error("Failed to add item condition:", error);
+      Alert.alert(
+        "Error",
+        error.response?.data?.Error || "Failed to add item condition.",
+      );
+    }
+  };
+
+  const addItemStatus = async (statusName: string) => {
+    try {
+      const similarOption = findSimilarOption(statusName, statusOptions);
+
+      if (similarOption) {
+        Alert.alert(
+          "Duplicate Warning",
+          `This may already exist as "${similarOption}".`,
+        );
+        return;
+      }
+
+      const response = await api.post("/pm/item-settings/item-status/add", {
+        status_name: statusName,
+      });
+
+      if (response.status === 201) {
+        const updatedStatuses = [...statusOptions, statusName];
+
+        setStatusOptions(updatedStatuses);
+        setStatus((prev) =>
+          prev.includes(statusName) ? prev : [...prev, statusName],
+        );
+
+        Alert.alert("Success", "Item status added successfully.");
+      }
+    } catch (error: any) {
+      console.error("Failed to add item status:", error);
+      Alert.alert(
+        "Error",
+        error.response?.data?.Error || "Failed to add item status.",
+      );
+    }
+  };
 
   // --- 1. FETCH ITEM DETAILS ---
   useFocusEffect(
@@ -570,9 +974,11 @@ export default function ItemDetailsScreen() {
           <Text style={styles.inputLabel}>Area Location</Text>
           <SingleSelectPicker
             value={area}
-            options={AREA_OPTIONS}
+            options={areaOptions}
             onSelect={setArea}
             placeholder="Select Area"
+            onAddOption={addAreaLocation}
+            title="AREA LOCATION"
           />
 
           <Text style={styles.inputLabel}>Item Type</Text>
@@ -599,25 +1005,29 @@ export default function ItemDetailsScreen() {
           </View>
 
           <Text style={styles.inputLabel}>Condition</Text>
-          <MultiSelectPicker
+          <DynamicMultiSelectPicker
             selectedValues={condition}
-            options={CONDITIONS}
+            options={conditionOptions}
             onAdd={(val: string) => setCondition([...condition, val])}
             onRemove={(val: string) =>
               setCondition(condition.filter((c) => c !== val))
             }
             placeholder="Select Conditions"
+            onAddOption={addItemCondition}
+            title="CONDITION"
           />
 
           <Text style={styles.inputLabel}>Status</Text>
-          <MultiSelectPicker
+          <DynamicMultiSelectPicker
             selectedValues={status}
-            options={STATUSES}
+            options={statusOptions}
             onAdd={(val: string) => setStatus([...status, val])}
             onRemove={(val: string) =>
               setStatus(status.filter((s) => s !== val))
             }
             placeholder="Select Statuses"
+            onAddOption={addItemStatus}
+            title="STATUS"
           />
 
           <Text style={styles.inputLabel}>
@@ -989,6 +1399,69 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 15,
     maxHeight: "50%",
     paddingVertical: 10,
+  },
+  optionList: {
+    maxHeight: 300,
+  },
+  emptyText: {
+    textAlign: "center",
+    padding: 20,
+    color: "#999",
+  },
+  dynamicModalContent: {
+    backgroundColor: "#FFF",
+    borderTopLeftRadius: 15,
+    borderTopRightRadius: 15,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 16,
+    maxHeight: "75%",
+  },
+  dynamicModalTitle: {
+    textAlign: "center",
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 10,
+  },
+  dynamicOptionList: {
+    maxHeight: 300,
+    borderWidth: 1,
+    borderColor: "#DDD",
+    borderRadius: 6,
+    marginBottom: 8,
+  },
+  addOptionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  addOptionInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: "#999",
+    borderRadius: 4,
+    height: 42,
+    paddingHorizontal: 10,
+    fontSize: 14,
+    color: "#333",
+  },
+  addOptionButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 5,
+    backgroundColor: "#8BC34A",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  warningText: {
+    backgroundColor: "#F5F53D",
+    color: "#333",
+    fontSize: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    marginTop: 8,
+    borderRadius: 3,
   },
   modalItem: {
     paddingVertical: 15,

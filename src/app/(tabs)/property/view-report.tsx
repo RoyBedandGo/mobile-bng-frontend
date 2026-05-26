@@ -21,42 +21,12 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 
 // --- CONSTANTS ---
-const AREAS = [
-  "All",
-  "Living Room",
-  "Bathroom",
-  "Master Bedroom",
-  "Bedroom",
-  "Kitchen Area",
-  "Dining Area",
-  "Balcony",
-];
-
 const ITEM_TYPES = [
   "Sanitary",
   "Electrical",
   "Appliance",
   "Fixture",
   "Furniture",
-];
-const CONDITIONS = [
-  "Busted",
-  "Stain",
-  "Dirty",
-  "Good",
-  "Working",
-  "Expired",
-  "Not Cooling",
-  "Broken",
-  "Damaged",
-];
-const STATUSES = [
-  "Repair",
-  "Replace",
-  "Cleaning",
-  "Laundry",
-  "Shampooing",
-  "Working",
 ];
 
 // --- CUSTOM UI COMPONENTS ---
@@ -114,6 +84,9 @@ const MultiSelectDropdown = ({
             <FlatList
               data={options}
               keyExtractor={(item) => item}
+              style={styles.optionList}
+              nestedScrollEnabled
+              showsVerticalScrollIndicator
               renderItem={({ item }) => {
                 const isSelected = selectedValues.includes(item);
                 return (
@@ -170,6 +143,10 @@ export default function ViewReportScreen() {
   const [selectedArea, setSelectedArea] = useState("All");
   const [showAreaModal, setShowAreaModal] = useState(false);
 
+  // Dynamic filter option states
+  const [conditionOptions, setConditionOptions] = useState<string[]>([]);
+  const [statusOptions, setStatusOptions] = useState<string[]>([]);
+
   // FILTER STATES
   const [isFilterModalVisible, setIsFilterModalVisible] = useState(false);
   const [showPicker, setShowPicker] = useState<"from" | "to" | null>(null);
@@ -211,6 +188,34 @@ export default function ViewReportScreen() {
       fetchContracts();
     }
   }, [property_id, isContractRequired]);
+
+  // --- EFFECT: FETCH DYNAMIC FILTER OPTIONS ---
+  useEffect(() => {
+    const fetchDynamicFilterOptions = async () => {
+      try {
+        const [conditionsRes, statusesRes] = await Promise.all([
+          api.get("/pm/item-settings/item-condition"),
+          api.get("/pm/item-settings/item-status"),
+        ]);
+
+        const conditions = conditionsRes.data
+          .map((item: any) => item.condition_name)
+          .filter(Boolean);
+
+        const statuses = statusesRes.data
+          .map((item: any) => item.status_name)
+          .filter(Boolean);
+
+        setConditionOptions(conditions);
+        setStatusOptions(statuses);
+      } catch (error) {
+        console.error("Failed to fetch dynamic filter options:", error);
+        Alert.alert("Error", "Could not load condition/status filter options.");
+      }
+    };
+
+    fetchDynamicFilterOptions();
+  }, []);
 
   // --- EFFECT 2: FETCH REPORT ID ---
   useEffect(() => {
@@ -301,6 +306,42 @@ export default function ViewReportScreen() {
     return Array.isArray(data) ? data : [];
   };
 
+  // Area dropdown is based on actual report_items joined to property_items.area.
+  // "All" is always first and duplicate/blank areas are removed.
+  const areaFilterOptions = useMemo(() => {
+    const uniqueAreas = Array.from(
+      new Set(
+        items
+          .map((item) => item.area)
+          .filter((areaValue) => !!areaValue && String(areaValue).trim() !== "")
+          .map((areaValue) => String(areaValue).trim()),
+      ),
+    );
+
+    return ["All", ...uniqueAreas];
+  }, [items]);
+
+  useEffect(() => {
+    if (!areaFilterOptions.includes(selectedArea)) {
+      setSelectedArea("All");
+    }
+  }, [areaFilterOptions, selectedArea]);
+
+  // Keep old saved condition/status values available in filters even if they are not yet in master tables.
+  const conditionFilterOptions = useMemo(() => {
+    const fromItems = items.flatMap((item) => safeParse(item.condition));
+    return Array.from(
+      new Set([...conditionOptions, ...fromItems].filter(Boolean)),
+    );
+  }, [items, conditionOptions]);
+
+  const statusFilterOptions = useMemo(() => {
+    const fromItems = items.flatMap((item) => safeParse(item.status));
+    return Array.from(
+      new Set([...statusOptions, ...fromItems].filter(Boolean)),
+    );
+  }, [items, statusOptions]);
+
   // --- HANDLERS FOR FILTER MODAL ---
   const toggleArrayItem = (
     setter: React.Dispatch<React.SetStateAction<string[]>>,
@@ -339,8 +380,11 @@ export default function ViewReportScreen() {
       if (filterDateTo && new Date(item.created_at) > filterDateTo)
         return false;
 
-      if (filterTypes.length > 0 && !filterTypes.includes(item.type))
-        return false;
+      if (filterTypes.length > 0) {
+        const itemTypes = safeParse(item.item_type);
+        const hasMatchingType = filterTypes.some((t) => itemTypes.includes(t));
+        if (!hasMatchingType) return false;
+      }
 
       if (filterConditions.length > 0) {
         const itemConditions = safeParse(item.condition);
@@ -562,7 +606,7 @@ export default function ViewReportScreen() {
             pathname: "/property/item-details",
             params: {
               item_id: item.item_id,
-              report_id: report_type === "Unit" ? reportId : item.report_id,
+              report_id: isUnitReport ? reportId : item.report_id,
               property_id: property_id,
               area_name: item.area || selectedArea,
               report_type: report_type,
@@ -806,13 +850,13 @@ export default function ViewReportScreen() {
             />
             <MultiSelectDropdown
               label="Condition"
-              options={CONDITIONS}
+              options={conditionFilterOptions}
               selectedValues={filterConditions}
               toggleValue={(val) => toggleArrayItem(setFilterConditions, val)}
             />
             <MultiSelectDropdown
               label="Status"
-              options={STATUSES}
+              options={statusFilterOptions}
               selectedValues={filterStatuses}
               toggleValue={(val) => toggleArrayItem(setFilterStatuses, val)}
             />
@@ -885,7 +929,7 @@ export default function ViewReportScreen() {
           <View style={styles.modalContent}>
             <Text style={styles.modalHeader}>Select Area</Text>
             <FlatList
-              data={AREAS}
+              data={areaFilterOptions}
               keyExtractor={(item) => item}
               renderItem={({ item }) => (
                 <TouchableOpacity
@@ -1192,6 +1236,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 15,
     paddingVertical: 20,
     maxHeight: "50%",
+  },
+  optionList: {
+    maxHeight: 300,
   },
   optionItem: {
     paddingVertical: 15,
