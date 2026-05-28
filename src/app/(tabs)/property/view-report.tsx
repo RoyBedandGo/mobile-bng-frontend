@@ -27,6 +27,7 @@ const ITEM_TYPES = [
   "Appliance",
   "Fixture",
   "Furniture",
+  "Area",
 ];
 
 // --- CUSTOM UI COMPONENTS ---
@@ -146,6 +147,7 @@ export default function ViewReportScreen() {
   // Dynamic filter option states
   const [conditionOptions, setConditionOptions] = useState<string[]>([]);
   const [statusOptions, setStatusOptions] = useState<string[]>([]);
+  const [areaLocationOptions, setAreaLocationOptions] = useState<string[]>([]);
 
   // FILTER STATES
   const [isFilterModalVisible, setIsFilterModalVisible] = useState(false);
@@ -191,26 +193,76 @@ export default function ViewReportScreen() {
 
   // --- EFFECT: FETCH DYNAMIC FILTER OPTIONS ---
   useEffect(() => {
+    const getArrayData = (payload: any) => {
+      if (Array.isArray(payload)) return payload;
+      if (Array.isArray(payload?.data)) return payload.data;
+      if (Array.isArray(payload?.areas)) return payload.areas;
+      if (Array.isArray(payload?.areaLocations)) return payload.areaLocations;
+      if (Array.isArray(payload?.area_locations)) return payload.area_locations;
+      if (Array.isArray(payload?.conditions)) return payload.conditions;
+      if (Array.isArray(payload?.statuses)) return payload.statuses;
+      return [];
+    };
+
+    const normalizeTextOptions = (rows: any[], fieldNames: string[]) => {
+      return Array.from(
+        new Set(
+          rows
+            .map((item: any) => {
+              if (typeof item === "string") return item;
+
+              const foundKey = fieldNames.find(
+                (fieldName) =>
+                  item?.[fieldName] !== undefined && item?.[fieldName] !== null,
+              );
+
+              return foundKey ? item[foundKey] : null;
+            })
+            .filter(Boolean)
+            .map((value: any) => String(value).trim())
+            .filter((value: string) => value.length > 0),
+        ),
+      );
+    };
+
     const fetchDynamicFilterOptions = async () => {
       try {
-        const [conditionsRes, statusesRes] = await Promise.all([
+        const [conditionsRes, statusesRes, areasRes] = await Promise.all([
           api.get("/pm/item-settings/item-condition"),
           api.get("/pm/item-settings/item-status"),
+          api.get("/pm/item-settings/area-location"),
         ]);
 
-        const conditions = conditionsRes.data
-          .map((item: any) => item.condition_name)
-          .filter(Boolean);
+        const conditions = normalizeTextOptions(
+          getArrayData(conditionsRes.data),
+          ["condition_name", "name", "value"],
+        );
 
-        const statuses = statusesRes.data
-          .map((item: any) => item.status_name)
-          .filter(Boolean);
+        const statuses = normalizeTextOptions(getArrayData(statusesRes.data), [
+          "status_name",
+          "name",
+          "value",
+        ]);
+
+        const areas = normalizeTextOptions(getArrayData(areasRes.data), [
+          "area_name",
+          "area_location",
+          "area_location_name",
+          "location_name",
+          "area",
+          "name",
+          "value",
+        ]);
 
         setConditionOptions(conditions);
         setStatusOptions(statuses);
+        setAreaLocationOptions(areas);
       } catch (error) {
         console.error("Failed to fetch dynamic filter options:", error);
-        Alert.alert("Error", "Could not load condition/status filter options.");
+        Alert.alert(
+          "Error",
+          "Could not load area/condition/status filter options.",
+        );
       }
     };
 
@@ -306,20 +358,20 @@ export default function ViewReportScreen() {
     return Array.isArray(data) ? data : [];
   };
 
-  // Area dropdown is based on actual report_items joined to property_items.area.
-  // "All" is always first and duplicate/blank areas are removed.
+  // Area dropdown is based on the area-location master table from the DB.
+  // "All" is always first. Areas already saved on items are also merged as fallback.
   const areaFilterOptions = useMemo(() => {
+    const areasFromItems = items
+      .map((item) => item.area)
+      .filter((areaValue) => !!areaValue && String(areaValue).trim() !== "")
+      .map((areaValue) => String(areaValue).trim());
+
     const uniqueAreas = Array.from(
-      new Set(
-        items
-          .map((item) => item.area)
-          .filter((areaValue) => !!areaValue && String(areaValue).trim() !== "")
-          .map((areaValue) => String(areaValue).trim()),
-      ),
+      new Set([...areaLocationOptions, ...areasFromItems]),
     );
 
     return ["All", ...uniqueAreas];
-  }, [items]);
+  }, [areaLocationOptions, items]);
 
   useEffect(() => {
     if (!areaFilterOptions.includes(selectedArea)) {
@@ -596,6 +648,7 @@ export default function ViewReportScreen() {
 
     // Check if the item has recovery data attached
     const isRecovered = !!item.recovery_id || !!item.recovery_title;
+    console.log("item report id", item.report_id);
 
     return (
       <TouchableOpacity
@@ -606,7 +659,7 @@ export default function ViewReportScreen() {
             pathname: "/property/item-details",
             params: {
               item_id: item.item_id,
-              report_id: isUnitReport ? reportId : item.report_id,
+              report_id: item.report_id,
               property_id: property_id,
               area_name: item.area || selectedArea,
               report_type: report_type,

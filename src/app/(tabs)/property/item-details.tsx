@@ -400,6 +400,16 @@ export default function ItemDetailsScreen() {
     report_item_id,
   } = useLocalSearchParams();
 
+  console.log("Received Params:", {
+    item_id,
+    report_id,
+    property_id,
+    area_name,
+    report_type,
+    requires_contract,
+    report_item_id,
+  });
+
   const isUnitReport =
     String(report_type).replace(" Report", "").trim() === "Unit";
 

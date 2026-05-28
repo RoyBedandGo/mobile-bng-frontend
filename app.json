@@ -54,7 +54,8 @@
           "microphonePermission": "Allow BedandGo to access your microphone to record video audio during inspections."
         }
       ],
-      "expo-video"
+      "expo-video",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -10,6 +10,7 @@ import {
   Alert,
   FlatList,
   Image,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   ScrollView,
@@ -19,7 +20,10 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { useAuth } from "../../../hooks/useAuth";
 import { api } from "../../../lib/api";
 import { SyncManager } from "../../../lib/SyncManager";
@@ -177,6 +181,8 @@ const SingleSelectPicker = ({
   onAddOption,
   title,
 }: any) => {
+  const insets = useSafeAreaInsets();
+
   const [modalVisible, setModalVisible] = useState(false);
   const [newOption, setNewOption] = useState("");
   const [warning, setWarning] = useState("");
@@ -218,63 +224,75 @@ const SingleSelectPicker = ({
       </TouchableOpacity>
 
       <Modal visible={modalVisible} transparent animationType="fade">
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setModalVisible(false)}
+        <KeyboardAvoidingView
+          style={styles.modalKeyboardView}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
           <TouchableOpacity
+            style={styles.modalOverlay}
             activeOpacity={1}
-            style={styles.dynamicModalContent}
-            onPress={() => {}}
+            onPress={() => setModalVisible(false)}
           >
-            <Text style={styles.dynamicModalTitle}>{title}</Text>
+            <TouchableOpacity
+              activeOpacity={1}
+              style={[
+                styles.dynamicModalContent,
+                { paddingBottom: Math.max(insets.bottom, 24) + 16 },
+              ]}
+              onPress={() => {}}
+            >
+              <Text style={styles.dynamicModalTitle}>{title}</Text>
 
-            <FlatList
-              data={options}
-              keyExtractor={(item, index) => `${item}-${index}`}
-              style={styles.dynamicOptionList}
-              nestedScrollEnabled
-              showsVerticalScrollIndicator
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.modalItem}
-                  onPress={() => {
-                    onSelect(item);
-                    setModalVisible(false);
-                  }}
-                >
-                  <Text style={styles.modalItemText}>{item}</Text>
-                </TouchableOpacity>
-              )}
-              ListEmptyComponent={
-                <Text style={styles.emptyText}>No options yet.</Text>
-              }
-            />
-
-            <View style={styles.addOptionRow}>
-              <TextInput
-                value={newOption}
-                onChangeText={(text) => {
-                  setNewOption(text);
-                  setWarning("");
-                }}
-                placeholder="Add new option"
-                placeholderTextColor="#999"
-                style={styles.addOptionInput}
+              <FlatList
+                data={options}
+                keyExtractor={(item, index) => `${item}-${index}`}
+                style={styles.dynamicOptionList}
+                nestedScrollEnabled
+                showsVerticalScrollIndicator
+                keyboardShouldPersistTaps="handled"
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={styles.modalItem}
+                    onPress={() => {
+                      onSelect(item);
+                      setModalVisible(false);
+                    }}
+                  >
+                    <Text style={styles.modalItemText}>{item}</Text>
+                  </TouchableOpacity>
+                )}
+                ListEmptyComponent={
+                  <Text style={styles.emptyText}>No options yet.</Text>
+                }
               />
 
-              <TouchableOpacity
-                style={styles.addOptionButton}
-                onPress={handleAdd}
-              >
-                <Ionicons name="add" size={28} color="#FFF" />
-              </TouchableOpacity>
-            </View>
+              <View style={styles.addOptionRow}>
+                <TextInput
+                  value={newOption}
+                  onChangeText={(text) => {
+                    setNewOption(text);
+                    setWarning("");
+                  }}
+                  placeholder="Add new option"
+                  placeholderTextColor="#999"
+                  style={styles.addOptionInput}
+                  returnKeyType="done"
+                />
 
-            {warning ? <Text style={styles.warningText}>{warning}</Text> : null}
+                <TouchableOpacity
+                  style={styles.addOptionButton}
+                  onPress={handleAdd}
+                >
+                  <Ionicons name="add" size={28} color="#FFF" />
+                </TouchableOpacity>
+              </View>
+
+              {warning ? (
+                <Text style={styles.warningText}>{warning}</Text>
+              ) : null}
+            </TouchableOpacity>
           </TouchableOpacity>
-        </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
     </>
   );
@@ -289,6 +307,8 @@ const DynamicMultiSelectPicker = ({
   onAddOption,
   title,
 }: any) => {
+  const insets = useSafeAreaInsets();
+
   const [modalVisible, setModalVisible] = useState(false);
   const [newOption, setNewOption] = useState("");
   const [warning, setWarning] = useState("");
@@ -341,63 +361,75 @@ const DynamicMultiSelectPicker = ({
       </TouchableOpacity>
 
       <Modal visible={modalVisible} transparent animationType="fade">
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setModalVisible(false)}
+        <KeyboardAvoidingView
+          style={styles.modalKeyboardView}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
           <TouchableOpacity
+            style={styles.modalOverlay}
             activeOpacity={1}
-            style={styles.dynamicModalContent}
-            onPress={() => {}}
+            onPress={() => setModalVisible(false)}
           >
-            <Text style={styles.dynamicModalTitle}>{title}</Text>
+            <TouchableOpacity
+              activeOpacity={1}
+              style={[
+                styles.dynamicModalContent,
+                { paddingBottom: Math.max(insets.bottom, 24) + 16 },
+              ]}
+              onPress={() => {}}
+            >
+              <Text style={styles.dynamicModalTitle}>{title}</Text>
 
-            <FlatList
-              data={availableOptions}
-              keyExtractor={(item, index) => `${item}-${index}`}
-              style={styles.dynamicOptionList}
-              nestedScrollEnabled
-              showsVerticalScrollIndicator
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.modalItem}
-                  onPress={() => {
-                    onAdd(item);
-                    setModalVisible(false);
-                  }}
-                >
-                  <Text style={styles.modalItemText}>{item}</Text>
-                </TouchableOpacity>
-              )}
-              ListEmptyComponent={
-                <Text style={styles.emptyText}>No options available.</Text>
-              }
-            />
-
-            <View style={styles.addOptionRow}>
-              <TextInput
-                value={newOption}
-                onChangeText={(text) => {
-                  setNewOption(text);
-                  setWarning("");
-                }}
-                placeholder="Add new option"
-                placeholderTextColor="#999"
-                style={styles.addOptionInput}
+              <FlatList
+                data={availableOptions}
+                keyExtractor={(item, index) => `${item}-${index}`}
+                style={styles.dynamicOptionList}
+                nestedScrollEnabled
+                showsVerticalScrollIndicator
+                keyboardShouldPersistTaps="handled"
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={styles.modalItem}
+                    onPress={() => {
+                      onAdd(item);
+                      setModalVisible(false);
+                    }}
+                  >
+                    <Text style={styles.modalItemText}>{item}</Text>
+                  </TouchableOpacity>
+                )}
+                ListEmptyComponent={
+                  <Text style={styles.emptyText}>No options available.</Text>
+                }
               />
 
-              <TouchableOpacity
-                style={styles.addOptionButton}
-                onPress={handleAdd}
-              >
-                <Ionicons name="add" size={28} color="#FFF" />
-              </TouchableOpacity>
-            </View>
+              <View style={styles.addOptionRow}>
+                <TextInput
+                  value={newOption}
+                  onChangeText={(text) => {
+                    setNewOption(text);
+                    setWarning("");
+                  }}
+                  placeholder="Add new option"
+                  placeholderTextColor="#999"
+                  style={styles.addOptionInput}
+                  returnKeyType="done"
+                />
 
-            {warning ? <Text style={styles.warningText}>{warning}</Text> : null}
+                <TouchableOpacity
+                  style={styles.addOptionButton}
+                  onPress={handleAdd}
+                >
+                  <Ionicons name="add" size={28} color="#FFF" />
+                </TouchableOpacity>
+              </View>
+
+              {warning ? (
+                <Text style={styles.warningText}>{warning}</Text>
+              ) : null}
+            </TouchableOpacity>
           </TouchableOpacity>
-        </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
     </>
   );
@@ -1581,6 +1613,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
 
+  modalKeyboardView: {
+    flex: 1,
+  },
+
   modalOverlay: {
     flex: 1,
     justifyContent: "flex-end",
@@ -1618,7 +1654,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 15,
     paddingHorizontal: 20,
     paddingTop: 12,
-    paddingBottom: 16,
     maxHeight: "75%",
   },
   dynamicModalTitle: {
