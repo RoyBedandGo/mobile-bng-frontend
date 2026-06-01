@@ -1,7 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
 import NetInfo from "@react-native-community/netinfo"; // <-- NEW
+import * as FileSystem from "expo-file-system/legacy";
 import * as ImageManipulator from "expo-image-manipulator"; // <-- NEW
 import * as ImagePicker from "expo-image-picker";
+import * as MediaLibrary from "expo-media-library";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useVideoPlayer, VideoView } from "expo-video";
 import React, { useCallback, useEffect, useState } from "react";
@@ -416,6 +418,7 @@ export default function ItemDetailsScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   // Dynamic Option States
   const [areaOptions, setAreaOptions] = useState<string[]>([]);
@@ -449,6 +452,78 @@ export default function ItemDetailsScreen() {
 
   const isVideo = (url: string | null) =>
     !!url?.toLowerCase().match(/\.(mp4|mov|avi|mkv|webm)$/);
+
+  const getMediaExtension = (url: string, mediaType: "image" | "video") => {
+    const cleanUrl = url.split("?")[0].split("#")[0];
+    const extension = cleanUrl.split(".").pop()?.toLowerCase();
+
+    if (extension && extension.length <= 5) return extension;
+
+    return mediaType === "video" ? "mp4" : "jpg";
+  };
+
+  const getDownloadFileName = (mediaType: "image" | "video") => {
+    const timestamp = new Date().getTime();
+    const extension = selectedMedia
+      ? getMediaExtension(selectedMedia.url, mediaType)
+      : mediaType === "video"
+        ? "mp4"
+        : "jpg";
+
+    return `bedandgo_item_${timestamp}.${extension}`;
+  };
+
+  const handleDownloadMedia = async (
+    mediaUrl: string,
+    mediaType: "image" | "video",
+  ) => {
+    try {
+      setIsDownloading(true);
+
+      const permission = await MediaLibrary.requestPermissionsAsync(false, [
+        "photo",
+        "video",
+      ]);
+      if (!permission.granted) {
+        Alert.alert(
+          "Permission Required",
+          "Please allow photo library access so the file can be saved to your phone.",
+        );
+        return;
+      }
+
+      let localUri = mediaUrl;
+
+      if (mediaUrl.startsWith("http")) {
+        const fileName = getDownloadFileName(mediaType);
+        const downloadPath = `${FileSystem.cacheDirectory}${fileName}`;
+
+        const downloadedFile = await FileSystem.downloadAsync(
+          mediaUrl,
+          downloadPath,
+        );
+
+        localUri = downloadedFile.uri;
+      }
+
+      await MediaLibrary.saveToLibraryAsync(localUri);
+
+      Alert.alert(
+        "Download Complete",
+        mediaType === "video"
+          ? "Video saved to your phone gallery."
+          : "Image saved to your phone gallery.",
+      );
+    } catch (error: any) {
+      console.error("Failed to download media:", error);
+      Alert.alert(
+        "Download Failed",
+        "Unable to save this file to your phone. Please try again.",
+      );
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   const fullScreenPlayer = useVideoPlayer(
     selectedMedia?.type === "video" ? selectedMedia.url : "",
@@ -1180,6 +1255,23 @@ export default function ItemDetailsScreen() {
           >
             <Ionicons name="close" size={36} color="#FFFFFF" />
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.downloadModalBtn}
+            disabled={isDownloading}
+            onPress={() => {
+              if (selectedMedia) {
+                handleDownloadMedia(selectedMedia.url, selectedMedia.type);
+              }
+            }}
+          >
+            {isDownloading ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Ionicons name="download-outline" size={30} color="#FFFFFF" />
+            )}
+          </TouchableOpacity>
+
           {selectedMedia?.type === "video" ? (
             <VideoView
               player={fullScreenPlayer}
@@ -1493,6 +1585,18 @@ const styles = StyleSheet.create({
     right: 20,
     zIndex: 10,
     padding: 10,
+  },
+  downloadModalBtn: {
+    position: "absolute",
+    top: Platform.OS === "ios" ? 52 : 24,
+    left: 20,
+    zIndex: 10,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    alignItems: "center",
   },
   fullScreenMedia: { width: "100%", height: "100%" },
 });
