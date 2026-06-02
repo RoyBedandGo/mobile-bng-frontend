@@ -12,16 +12,21 @@ import {
   Alert,
   FlatList,
   Image,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  TextInputProps,
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { api } from "../../../lib/api";
 import { SyncManager } from "../../../lib/SyncManager"; // <-- NEW
 
@@ -32,7 +37,152 @@ const ITEM_TYPES = [
   "Appliance",
   "Fixture",
   "Furniture",
+  "Area",
 ];
+
+const AUTO_COMPLETE_SUGGESTIONS = [
+  // Appliances
+  "Refrigerator",
+  "Gas/Electric Stove",
+  "Gas Stove",
+  "Electric Stove",
+  "Oven",
+  "Washing Machine",
+  "Air Conditioner",
+  "Air Conditioner Remote",
+  "Microwave",
+  "Microwave Oven",
+  "Electric Kettle",
+  "Television",
+  "Television Remote",
+  "TV Remote",
+  "Range Hood",
+  "Range hood",
+  "Shower Heater",
+  "Water Heater",
+  "Induction Cooker",
+  "Induction cooker",
+  "Rice cooker",
+  "Electric Fan",
+
+  // Furniture
+  "Sofa",
+  "Dining Table",
+  "Chair",
+  "Chairs",
+  "Bed Frame",
+  "Beds (including mattress)",
+  "Mattress",
+  "Wardrobe",
+  "Wardrobe/Closet",
+  "Cabinet",
+  "Built in Cabinet",
+  "TV Stand",
+  "Coffee Table",
+  "Ottoman",
+  "Study Desk",
+  "Study Table",
+  "Side table",
+  "Hanging Shelves",
+
+  // Fixtures
+  "Curtain",
+  "Curtain Rods / Blinds",
+  "Ceiling Lights",
+  "Light Bulb",
+  "Wall Sockets",
+  "Light Switch",
+  "Light Switches",
+  "Outlet",
+  "Outlets",
+  "Faucet",
+  "Faucets",
+  "Shower Head",
+  "Toilet Bowl",
+  "Toilet Cover",
+  "Lavatory",
+  "Kitchen Sink",
+  "Door Lock",
+  "Doorbell",
+  "Window",
+  "Mirror",
+  "Bathroom Mirror",
+  "Bidet",
+  "Intercom",
+  "Exhaust Fan",
+  "Plants",
+];
+
+const getSuggestionMatch = (value: string, suggestions: string[]) => {
+  const cleanValue = value.trim().toLowerCase();
+
+  if (cleanValue.length < 2) return "";
+
+  const normalizedValue = cleanValue.replace(/\s+/g, "");
+
+  return (
+    suggestions.find((suggestion) => {
+      const cleanSuggestion = suggestion.trim().toLowerCase();
+      const normalizedSuggestion = cleanSuggestion.replace(/\s+/g, "");
+
+      return (
+        cleanSuggestion.startsWith(cleanValue) ||
+        normalizedSuggestion.startsWith(normalizedValue) ||
+        cleanSuggestion.split(/\s+/).some((word) => word.startsWith(cleanValue))
+      );
+    }) || ""
+  );
+};
+
+type SmartTextInputProps = TextInputProps & {
+  value: string;
+  onChangeText: (text: string) => void;
+  suggestions?: string[];
+};
+
+const SmartTextInput = ({
+  value,
+  onChangeText,
+  suggestions = AUTO_COMPLETE_SUGGESTIONS,
+  style,
+  ...props
+}: SmartTextInputProps) => {
+  const cleanSuggestions = Array.from(
+    new Set(
+      suggestions
+        .filter(Boolean)
+        .map((suggestion) => String(suggestion).trim())
+        .filter(Boolean),
+    ),
+  );
+
+  const suggestion = getSuggestionMatch(value, cleanSuggestions);
+
+  return (
+    <View style={styles.smartInputWrapper}>
+      <TextInput
+        {...props}
+        value={value}
+        onChangeText={onChangeText}
+        style={style}
+        autoCorrect
+        spellCheck
+        autoCapitalize={props.autoCapitalize || "sentences"}
+      />
+
+      {suggestion && suggestion.toLowerCase() !== value.trim().toLowerCase() ? (
+        <TouchableOpacity
+          style={styles.suggestionButton}
+          activeOpacity={0.85}
+          onPress={() => onChangeText(suggestion)}
+        >
+          <Ionicons name="sparkles-outline" size={14} color="#5B7F1F" />
+          <Text style={styles.suggestionText}>Suggestion: {suggestion}</Text>
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  );
+};
 
 // --- HELPERS ---
 const normalizeText = (text: string) => {
@@ -93,7 +243,10 @@ const MultiSelectPicker = ({
   onRemove,
   placeholder,
 }: any) => {
+  const insets = useSafeAreaInsets();
+
   const [modalVisible, setModalVisible] = useState(false);
+
   const availableOptions = options.filter(
     (opt: string) => !selectedValues.includes(opt),
   );
@@ -114,43 +267,55 @@ const MultiSelectPicker = ({
         ) : (
           <Text style={styles.placeholderText}>{placeholder}</Text>
         )}
+
         <Ionicons name="caret-down" size={16} color="#666" />
       </TouchableOpacity>
 
-      <Modal visible={modalVisible} transparent={true} animationType="fade">
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setModalVisible(false)}
+      <Modal visible={modalVisible} transparent animationType="fade">
+        <KeyboardAvoidingView
+          style={styles.modalKeyboardView}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
           <TouchableOpacity
+            style={styles.modalOverlay}
             activeOpacity={1}
-            style={styles.modalContent}
-            onPress={() => {}}
+            onPress={() => setModalVisible(false)}
           >
-            <FlatList
-              data={availableOptions}
-              keyExtractor={(item) => item}
-              style={styles.optionList}
-              nestedScrollEnabled
-              showsVerticalScrollIndicator
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.modalItem}
-                  onPress={() => {
-                    onAdd(item);
-                    setModalVisible(false);
-                  }}
-                >
-                  <Text style={styles.modalItemText}>{item}</Text>
-                </TouchableOpacity>
-              )}
-              ListEmptyComponent={
+            <TouchableOpacity
+              activeOpacity={1}
+              style={[
+                styles.modalContent,
+                { paddingBottom: Math.max(insets.bottom, 24) + 16 },
+              ]}
+              onPress={() => {}}
+            >
+              {availableOptions.length === 0 ? (
                 <Text style={styles.emptyText}>All options selected</Text>
-              }
-            />
+              ) : (
+                <FlatList
+                  data={availableOptions}
+                  keyExtractor={(item) => item}
+                  style={styles.optionList}
+                  contentContainerStyle={styles.optionListContent}
+                  nestedScrollEnabled
+                  showsVerticalScrollIndicator
+                  keyboardShouldPersistTaps="handled"
+                  renderItem={({ item }) => (
+                    <TouchableOpacity
+                      style={styles.modalItem}
+                      onPress={() => {
+                        onAdd(item);
+                        setModalVisible(false);
+                      }}
+                    >
+                      <Text style={styles.modalItemText}>{item}</Text>
+                    </TouchableOpacity>
+                  )}
+                />
+              )}
+            </TouchableOpacity>
           </TouchableOpacity>
-        </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
     </>
   );
@@ -164,6 +329,8 @@ const SingleSelectPicker = ({
   onAddOption,
   title,
 }: any) => {
+  const insets = useSafeAreaInsets();
+
   const [modalVisible, setModalVisible] = useState(false);
   const [newOption, setNewOption] = useState("");
   const [warning, setWarning] = useState("");
@@ -204,64 +371,77 @@ const SingleSelectPicker = ({
         <Ionicons name="caret-down" size={16} color="#666" />
       </TouchableOpacity>
 
-      <Modal visible={modalVisible} transparent={true} animationType="fade">
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setModalVisible(false)}
+      <Modal visible={modalVisible} transparent animationType="fade">
+        <KeyboardAvoidingView
+          style={styles.modalKeyboardView}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
           <TouchableOpacity
+            style={styles.modalOverlay}
             activeOpacity={1}
-            style={styles.dynamicModalContent}
-            onPress={() => {}}
+            onPress={() => setModalVisible(false)}
           >
-            <Text style={styles.dynamicModalTitle}>{title}</Text>
+            <TouchableOpacity
+              activeOpacity={1}
+              style={[
+                styles.dynamicModalContent,
+                { paddingBottom: Math.max(insets.bottom, 24) + 16 },
+              ]}
+              onPress={() => {}}
+            >
+              <Text style={styles.dynamicModalTitle}>{title}</Text>
 
-            <FlatList
-              data={options}
-              keyExtractor={(item, index) => `${item}-${index}`}
-              style={styles.dynamicOptionList}
-              nestedScrollEnabled
-              showsVerticalScrollIndicator
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.modalItem}
-                  onPress={() => {
-                    onSelect(item);
-                    setModalVisible(false);
-                  }}
-                >
-                  <Text style={styles.modalItemText}>{item}</Text>
-                </TouchableOpacity>
-              )}
-              ListEmptyComponent={
-                <Text style={styles.emptyText}>No options yet.</Text>
-              }
-            />
-
-            <View style={styles.addOptionRow}>
-              <TextInput
-                value={newOption}
-                onChangeText={(text) => {
-                  setNewOption(text);
-                  setWarning("");
-                }}
-                placeholder="Add new option"
-                placeholderTextColor="#999"
-                style={styles.addOptionInput}
+              <FlatList
+                data={options}
+                keyExtractor={(item, index) => `${item}-${index}`}
+                style={styles.dynamicOptionList}
+                nestedScrollEnabled
+                showsVerticalScrollIndicator
+                keyboardShouldPersistTaps="handled"
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={styles.modalItem}
+                    onPress={() => {
+                      onSelect(item);
+                      setModalVisible(false);
+                    }}
+                  >
+                    <Text style={styles.modalItemText}>{item}</Text>
+                  </TouchableOpacity>
+                )}
+                ListEmptyComponent={
+                  <Text style={styles.emptyText}>No options yet.</Text>
+                }
               />
 
-              <TouchableOpacity
-                style={styles.addOptionButton}
-                onPress={handleAdd}
-              >
-                <Ionicons name="add" size={28} color="#FFF" />
-              </TouchableOpacity>
-            </View>
+              <View style={styles.addOptionRow}>
+                <SmartTextInput
+                  value={newOption}
+                  onChangeText={(text) => {
+                    setNewOption(text);
+                    setWarning("");
+                  }}
+                  suggestions={options}
+                  placeholder="Add new option"
+                  placeholderTextColor="#999"
+                  style={styles.addOptionInput}
+                  returnKeyType="done"
+                />
 
-            {warning ? <Text style={styles.warningText}>{warning}</Text> : null}
+                <TouchableOpacity
+                  style={styles.addOptionButton}
+                  onPress={handleAdd}
+                >
+                  <Ionicons name="add" size={28} color="#FFF" />
+                </TouchableOpacity>
+              </View>
+
+              {warning ? (
+                <Text style={styles.warningText}>{warning}</Text>
+              ) : null}
+            </TouchableOpacity>
           </TouchableOpacity>
-        </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
     </>
   );
@@ -276,6 +456,8 @@ const DynamicMultiSelectPicker = ({
   onAddOption,
   title,
 }: any) => {
+  const insets = useSafeAreaInsets();
+
   const [modalVisible, setModalVisible] = useState(false);
   const [newOption, setNewOption] = useState("");
   const [warning, setWarning] = useState("");
@@ -327,64 +509,77 @@ const DynamicMultiSelectPicker = ({
         <Ionicons name="caret-down" size={16} color="#666" />
       </TouchableOpacity>
 
-      <Modal visible={modalVisible} transparent={true} animationType="fade">
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setModalVisible(false)}
+      <Modal visible={modalVisible} transparent animationType="fade">
+        <KeyboardAvoidingView
+          style={styles.modalKeyboardView}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
           <TouchableOpacity
+            style={styles.modalOverlay}
             activeOpacity={1}
-            style={styles.dynamicModalContent}
-            onPress={() => {}}
+            onPress={() => setModalVisible(false)}
           >
-            <Text style={styles.dynamicModalTitle}>{title}</Text>
+            <TouchableOpacity
+              activeOpacity={1}
+              style={[
+                styles.dynamicModalContent,
+                { paddingBottom: Math.max(insets.bottom, 24) + 16 },
+              ]}
+              onPress={() => {}}
+            >
+              <Text style={styles.dynamicModalTitle}>{title}</Text>
 
-            <FlatList
-              data={availableOptions}
-              keyExtractor={(item, index) => `${item}-${index}`}
-              style={styles.dynamicOptionList}
-              nestedScrollEnabled
-              showsVerticalScrollIndicator
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.modalItem}
-                  onPress={() => {
-                    onAdd(item);
-                    setModalVisible(false);
-                  }}
-                >
-                  <Text style={styles.modalItemText}>{item}</Text>
-                </TouchableOpacity>
-              )}
-              ListEmptyComponent={
-                <Text style={styles.emptyText}>No options available.</Text>
-              }
-            />
-
-            <View style={styles.addOptionRow}>
-              <TextInput
-                value={newOption}
-                onChangeText={(text) => {
-                  setNewOption(text);
-                  setWarning("");
-                }}
-                placeholder="Add new option"
-                placeholderTextColor="#999"
-                style={styles.addOptionInput}
+              <FlatList
+                data={availableOptions}
+                keyExtractor={(item, index) => `${item}-${index}`}
+                style={styles.dynamicOptionList}
+                nestedScrollEnabled
+                showsVerticalScrollIndicator
+                keyboardShouldPersistTaps="handled"
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={styles.modalItem}
+                    onPress={() => {
+                      onAdd(item);
+                      setModalVisible(false);
+                    }}
+                  >
+                    <Text style={styles.modalItemText}>{item}</Text>
+                  </TouchableOpacity>
+                )}
+                ListEmptyComponent={
+                  <Text style={styles.emptyText}>No options available.</Text>
+                }
               />
 
-              <TouchableOpacity
-                style={styles.addOptionButton}
-                onPress={handleAdd}
-              >
-                <Ionicons name="add" size={28} color="#FFF" />
-              </TouchableOpacity>
-            </View>
+              <View style={styles.addOptionRow}>
+                <SmartTextInput
+                  value={newOption}
+                  onChangeText={(text) => {
+                    setNewOption(text);
+                    setWarning("");
+                  }}
+                  suggestions={options}
+                  placeholder="Add new option"
+                  placeholderTextColor="#999"
+                  style={styles.addOptionInput}
+                  returnKeyType="done"
+                />
 
-            {warning ? <Text style={styles.warningText}>{warning}</Text> : null}
+                <TouchableOpacity
+                  style={styles.addOptionButton}
+                  onPress={handleAdd}
+                >
+                  <Ionicons name="add" size={28} color="#FFF" />
+                </TouchableOpacity>
+              </View>
+
+              {warning ? (
+                <Text style={styles.warningText}>{warning}</Text>
+              ) : null}
+            </TouchableOpacity>
           </TouchableOpacity>
-        </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
     </>
   );
@@ -392,6 +587,16 @@ const DynamicMultiSelectPicker = ({
 
 // --- MAIN SCREEN ---
 export default function ItemDetailsScreen() {
+  const handleSetMediaAsFirst = (index: number) => {
+    setImages((prevImages) => {
+      if (index <= 0 || index >= prevImages.length) return prevImages;
+
+      const updatedImages = [...prevImages];
+      const selectedMedia = updatedImages.splice(index, 1)[0];
+
+      return [selectedMedia, ...updatedImages];
+    });
+  };
   const {
     item_id,
     report_id,
@@ -888,15 +1093,33 @@ export default function ItemDetailsScreen() {
       const existingImages = images.filter((img) => img.startsWith("http"));
       const newLocalImages = images.filter((img) => img.startsWith("file://"));
 
+      const imageOrder = images.map((img) => {
+        if (img.startsWith("http")) {
+          return {
+            type: "existing",
+            url: img,
+          };
+        }
+
+        return {
+          type: "new",
+          localIndex: newLocalImages.indexOf(img),
+        };
+      });
+
+      const conditionPayload = Array.isArray(condition) ? condition : [];
+      const statusPayload = Array.isArray(status) ? status : [];
+
       // 1. Build Raw Payload for Offline Queue
       rawPayload = {
         area: area,
         item_name: itemName,
         item_type: itemType,
-        condition: condition,
-        status: status,
+        condition: conditionPayload,
+        status: statusPayload,
         comment: comment,
         existing_images: existingImages,
+        image_order: imageOrder,
         new_images: newLocalImages.map((uri, index) => {
           const isVid = isVideo(uri);
           const ext = uri.split(".").pop() || (isVid ? "mp4" : "jpg");
@@ -938,8 +1161,8 @@ export default function ItemDetailsScreen() {
       formData.append("area", area);
       formData.append("item_name", itemName);
       formData.append("item_type", JSON.stringify(itemType));
-      formData.append("condition", JSON.stringify(condition));
-      formData.append("status", JSON.stringify(status));
+      formData.append("condition", JSON.stringify(conditionPayload));
+      formData.append("status", JSON.stringify(statusPayload));
       formData.append("comment", comment);
 
       if (isUnitReport) {
@@ -949,6 +1172,7 @@ export default function ItemDetailsScreen() {
       }
 
       formData.append("existing_images", JSON.stringify(existingImages));
+      formData.append("image_order", JSON.stringify(imageOrder));
 
       newLocalImages.forEach((uri, index) => {
         const isVid = isVideo(uri);
@@ -1067,22 +1291,25 @@ export default function ItemDetailsScreen() {
           />
 
           <Text style={styles.inputLabel}>Item Type</Text>
-          <MultiSelectPicker
-            selectedValues={itemType}
-            options={ITEM_TYPES}
-            onAdd={(val: string) => setItemType([...itemType, val])}
-            onRemove={(val: string) =>
-              setItemType(itemType.filter((t) => t !== val))
-            }
-            placeholder="Select Item Types"
-          />
+          <View style={styles.itemTypePickerSpacing}>
+            <MultiSelectPicker
+              selectedValues={itemType}
+              options={ITEM_TYPES}
+              onAdd={(val: string) => setItemType([...itemType, val])}
+              onRemove={(val: string) =>
+                setItemType(itemType.filter((t) => t !== val))
+              }
+              placeholder="Select Item Types"
+            />
+          </View>
 
           <Text style={styles.inputLabel}>Item Name</Text>
           <View style={styles.inputBox}>
-            <TextInput
+            <SmartTextInput
               style={styles.textInput}
               value={itemName}
               onChangeText={setItemName}
+              suggestions={AUTO_COMPLETE_SUGGESTIONS}
               placeholder="e.g. Electric Fan"
               placeholderTextColor="#999"
               editable={isEditing}
@@ -1119,10 +1346,11 @@ export default function ItemDetailsScreen() {
             {isUnitReport ? "Comment and Findings" : "Comment"}
           </Text>
           <View style={[styles.inputBox, styles.commentBox]}>
-            <TextInput
+            <SmartTextInput
               style={styles.commentInput}
               value={comment}
               onChangeText={setComment}
+              suggestions={AUTO_COMPLETE_SUGGESTIONS}
               placeholder="No comment added."
               placeholderTextColor="#999"
               multiline
@@ -1182,8 +1410,12 @@ export default function ItemDetailsScreen() {
           <View style={styles.mediaContainer}>
             {images.map((mediaUrl, index) => {
               const mediaType = isVideo(mediaUrl) ? "video" : "image";
+
               return (
-                <View key={index} style={styles.videoThumbnailContainer}>
+                <View
+                  key={`${mediaUrl}-${index}`}
+                  style={styles.videoThumbnailContainer}
+                >
                   <TouchableOpacity
                     activeOpacity={0.8}
                     onPress={() =>
@@ -1194,6 +1426,7 @@ export default function ItemDetailsScreen() {
                       source={{ uri: mediaUrl }}
                       style={styles.mediaThumbnail}
                     />
+
                     {mediaType === "video" && (
                       <View style={styles.playIconOverlay}>
                         <Ionicons
@@ -1204,6 +1437,27 @@ export default function ItemDetailsScreen() {
                       </View>
                     )}
                   </TouchableOpacity>
+
+                  {index === 0 && (
+                    <View style={styles.firstMediaBadge}>
+                      <Ionicons name="star" size={12} color="#FFF" />
+                      <Text style={styles.firstMediaBadgeText}>First</Text>
+                    </View>
+                  )}
+
+                  {isEditing && index !== 0 && (
+                    <TouchableOpacity
+                      style={styles.setFirstMediaBtn}
+                      onPress={() => handleSetMediaAsFirst(index)}
+                    >
+                      <Ionicons
+                        name="arrow-up-circle-outline"
+                        size={14}
+                        color="#FFF"
+                      />
+                      <Text style={styles.setFirstMediaText}>Set First</Text>
+                    </TouchableOpacity>
+                  )}
 
                   {isEditing && (
                     <TouchableOpacity
@@ -1313,6 +1567,48 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     minHeight: 40,
   },
+
+  firstMediaBadge: {
+    position: "absolute",
+    top: 6,
+    left: 6,
+    backgroundColor: "rgba(91, 127, 31, 0.95)",
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    zIndex: 3,
+  },
+
+  firstMediaBadgeText: {
+    color: "#FFF",
+    fontSize: 10,
+    fontWeight: "700",
+  },
+
+  setFirstMediaBtn: {
+    position: "absolute",
+    bottom: 6,
+    left: 6,
+    right: 6,
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
+    borderRadius: 6,
+    paddingVertical: 5,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 4,
+    zIndex: 3,
+  },
+
+  setFirstMediaText: {
+    color: "#FFF",
+    fontSize: 10,
+    fontWeight: "700",
+  },
+
   mainTitle: {
     fontSize: 14,
     fontWeight: "bold",
@@ -1344,6 +1640,27 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
 
+  smartInputWrapper: {
+    flex: 1,
+  },
+  suggestionButton: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F1F8E9",
+    borderWidth: 1,
+    borderColor: "#C5E1A5",
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginTop: 6,
+  },
+  suggestionText: {
+    color: "#5B7F1F",
+    fontSize: 12,
+    marginLeft: 4,
+  },
+
   inputLabel: { fontSize: 12, color: "#333", marginBottom: 6, marginLeft: 2 },
   inputBox: {
     backgroundColor: "#EEEEEE",
@@ -1359,6 +1676,9 @@ const styles = StyleSheet.create({
   inputText: { color: "#333", fontSize: 14, flex: 1 },
   textInput: { flex: 1, fontSize: 14, color: "#333", padding: 0 },
   placeholderText: { color: "#999", fontSize: 14 },
+  itemTypePickerSpacing: {
+    marginBottom: 14,
+  },
 
   chipContainer: { flexDirection: "row", flexWrap: "wrap", flex: 1, gap: 6 },
   chip: {
@@ -1490,6 +1810,9 @@ const styles = StyleSheet.create({
   },
   submitBtnText: { color: "#FFFFFF", fontWeight: "bold", letterSpacing: 0.5 },
 
+  modalKeyboardView: {
+    flex: 1,
+  },
   modalOverlay: {
     flex: 1,
     justifyContent: "flex-end",
@@ -1503,7 +1826,11 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   optionList: {
-    maxHeight: 300,
+    maxHeight: 360,
+    flexShrink: 1,
+  },
+  optionListContent: {
+    paddingBottom: 8,
   },
   emptyText: {
     textAlign: "center",
@@ -1516,7 +1843,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 15,
     paddingHorizontal: 20,
     paddingTop: 12,
-    paddingBottom: 16,
     maxHeight: "75%",
   },
   dynamicModalTitle: {

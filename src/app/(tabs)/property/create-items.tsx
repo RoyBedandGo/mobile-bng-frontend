@@ -17,6 +17,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  TextInputProps,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -39,6 +40,150 @@ const ITEM_TYPES = [
 ];
 
 const MAX_MEDIA_FILES = 3;
+
+const AUTO_COMPLETE_SUGGESTIONS = [
+  // Appliances
+  "Refrigerator",
+  "Gas/Electric Stove",
+  "Gas Stove",
+  "Electric Stove",
+  "Oven",
+  "Washing Machine",
+  "Air Conditioner",
+  "Air Conditioner Remote",
+  "Microwave",
+  "Microwave Oven",
+  "Electric Kettle",
+  "Television",
+  "Television Remote",
+  "TV Remote",
+  "Range Hood",
+  "Range hood",
+  "Shower Heater",
+  "Water Heater",
+  "Induction Cooker",
+  "Induction cooker",
+  "Rice cooker",
+  "Electric Fan",
+
+  // Furniture
+  "Sofa",
+  "Dining Table",
+  "Chair",
+  "Chairs",
+  "Bed Frame",
+  "Beds (including mattress)",
+  "Mattress",
+  "Wardrobe",
+  "Wardrobe/Closet",
+  "Cabinet",
+  "Built in Cabinet",
+  "TV Stand",
+  "Coffee Table",
+  "Ottoman",
+  "Study Desk",
+  "Study Table",
+  "Side table",
+  "Hanging Shelves",
+
+  // Fixtures
+  "Curtain",
+  "Curtain Rods / Blinds",
+  "Ceiling Lights",
+  "Light Bulb",
+  "Wall Sockets",
+  "Light Switch",
+  "Light Switches",
+  "Outlet",
+  "Outlets",
+  "Faucet",
+  "Faucets",
+  "Shower Head",
+  "Toilet Bowl",
+  "Toilet Cover",
+  "Lavatory",
+  "Kitchen Sink",
+  "Door Lock",
+  "Doorbell",
+  "Window",
+  "Mirror",
+  "Bathroom Mirror",
+  "Bidet",
+  "Intercom",
+  "Exhaust Fan",
+  "Plants",
+];
+
+const getSuggestionMatch = (value: string, suggestions: string[]) => {
+  const cleanValue = value.trim().toLowerCase();
+
+  if (cleanValue.length < 2) return "";
+
+  const normalizedValue = cleanValue.replace(/\s+/g, "");
+
+  return (
+    suggestions.find((suggestion) => {
+      const cleanSuggestion = suggestion.trim().toLowerCase();
+      const normalizedSuggestion = cleanSuggestion.replace(/\s+/g, "");
+
+      return (
+        cleanSuggestion.startsWith(cleanValue) ||
+        normalizedSuggestion.startsWith(normalizedValue) ||
+        cleanSuggestion.split(/\s+/).some((word) => word.startsWith(cleanValue))
+      );
+    }) || ""
+  );
+};
+
+type SmartTextInputProps = TextInputProps & {
+  value: string;
+  onChangeText: (text: string) => void;
+  suggestions?: string[];
+};
+
+const SmartTextInput = ({
+  value,
+  onChangeText,
+  suggestions = AUTO_COMPLETE_SUGGESTIONS,
+  style,
+  ...props
+}: SmartTextInputProps) => {
+  const cleanSuggestions = Array.from(
+    new Set(
+      suggestions
+        .filter(Boolean)
+        .map((suggestion) => String(suggestion).trim())
+        .filter(Boolean),
+    ),
+  );
+
+  const suggestion = getSuggestionMatch(value, cleanSuggestions);
+
+  return (
+    <View style={styles.smartInputWrapper}>
+      <TextInput
+        {...props}
+        value={value}
+        onChangeText={onChangeText}
+        style={style}
+        autoCorrect
+        spellCheck
+        autoCapitalize={props.autoCapitalize || "sentences"}
+      />
+
+      {suggestion && suggestion.toLowerCase() !== value.trim().toLowerCase() ? (
+        <TouchableOpacity
+          style={styles.suggestionButton}
+          activeOpacity={0.85}
+          onPress={() => onChangeText(suggestion)}
+        >
+          <Ionicons name="sparkles-outline" size={14} color="#5B7F1F" />
+          <Text style={styles.suggestionText}>Suggestion: {suggestion}</Text>
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  );
+};
 
 // --- HELPERS ---
 const normalizeText = (text: string) => {
@@ -107,6 +252,8 @@ const MultiSelectPicker = ({
   onRemove,
   placeholder,
 }: any) => {
+  const insets = useSafeAreaInsets();
+
   const [modalVisible, setModalVisible] = useState(false);
 
   const availableOptions = options.filter(
@@ -134,40 +281,50 @@ const MultiSelectPicker = ({
       </TouchableOpacity>
 
       <Modal visible={modalVisible} transparent animationType="fade">
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setModalVisible(false)}
+        <KeyboardAvoidingView
+          style={styles.modalKeyboardView}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
           <TouchableOpacity
+            style={styles.modalOverlay}
             activeOpacity={1}
-            style={styles.modalContent}
-            onPress={() => {}}
+            onPress={() => setModalVisible(false)}
           >
-            {availableOptions.length === 0 ? (
-              <Text style={styles.emptyText}>All options selected</Text>
-            ) : (
-              <FlatList
-                data={availableOptions}
-                keyExtractor={(item) => item}
-                style={styles.optionList}
-                nestedScrollEnabled
-                showsVerticalScrollIndicator
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    style={styles.modalItem}
-                    onPress={() => {
-                      onAdd(item);
-                      setModalVisible(false);
-                    }}
-                  >
-                    <Text style={styles.modalItemText}>{item}</Text>
-                  </TouchableOpacity>
-                )}
-              />
-            )}
+            <TouchableOpacity
+              activeOpacity={1}
+              style={[
+                styles.modalContent,
+                { paddingBottom: Math.max(insets.bottom, 24) + 16 },
+              ]}
+              onPress={() => {}}
+            >
+              {availableOptions.length === 0 ? (
+                <Text style={styles.emptyText}>All options selected</Text>
+              ) : (
+                <FlatList
+                  data={availableOptions}
+                  keyExtractor={(item) => item}
+                  style={styles.optionList}
+                  contentContainerStyle={styles.optionListContent}
+                  nestedScrollEnabled
+                  showsVerticalScrollIndicator
+                  keyboardShouldPersistTaps="handled"
+                  renderItem={({ item }) => (
+                    <TouchableOpacity
+                      style={styles.modalItem}
+                      onPress={() => {
+                        onAdd(item);
+                        setModalVisible(false);
+                      }}
+                    >
+                      <Text style={styles.modalItemText}>{item}</Text>
+                    </TouchableOpacity>
+                  )}
+                />
+              )}
+            </TouchableOpacity>
           </TouchableOpacity>
-        </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
     </>
   );
@@ -267,12 +424,13 @@ const SingleSelectPicker = ({
               />
 
               <View style={styles.addOptionRow}>
-                <TextInput
+                <SmartTextInput
                   value={newOption}
                   onChangeText={(text) => {
                     setNewOption(text);
                     setWarning("");
                   }}
+                  suggestions={options}
                   placeholder="Add new option"
                   placeholderTextColor="#999"
                   style={styles.addOptionInput}
@@ -404,12 +562,13 @@ const DynamicMultiSelectPicker = ({
               />
 
               <View style={styles.addOptionRow}>
-                <TextInput
+                <SmartTextInput
                   value={newOption}
                   onChangeText={(text) => {
                     setNewOption(text);
                     setWarning("");
                   }}
+                  suggestions={options}
                   placeholder="Add new option"
                   placeholderTextColor="#999"
                   style={styles.addOptionInput}
@@ -469,6 +628,7 @@ export default function CreateItemScreen() {
   >([]);
   const [cameraReady, setCameraReady] = useState(false);
   const [isTakingPicture, setIsTakingPicture] = useState(false);
+  const [cameraZoom, setCameraZoom] = useState<0 | 0.5>(0);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -744,6 +904,7 @@ export default function CreateItemScreen() {
         }
 
         setCameraCaptures([]);
+        setCameraZoom(0);
         setCameraReady(false);
         setCameraModalVisible(true);
       } catch (error: any) {
@@ -931,19 +1092,16 @@ export default function CreateItemScreen() {
 
   // --- SUBMIT LOGIC ---
   const handleSaveItem = async (isDone: boolean) => {
-    if (
-      !area ||
-      itemType.length === 0 ||
-      !itemName ||
-      condition.length === 0 ||
-      status.length === 0
-    ) {
+    if (!area || itemType.length === 0 || !itemName) {
       Alert.alert(
         "Validation Error",
-        "Please fill out all required item fields.",
+        "Please fill out Area Location, Item Type, and Item Name.",
       );
       return;
     }
+
+    const conditionPayload = condition.length > 0 ? condition : [];
+    const statusPayload = status.length > 0 ? status : [];
 
     let rawPayload: any;
 
@@ -958,8 +1116,8 @@ export default function CreateItemScreen() {
         item_name: itemName,
         created_by: String(user?.id),
         comment,
-        condition,
-        status,
+        condition: conditionPayload,
+        status: statusPayload,
         images: selectedMedia.map((mediaItem, index) => ({
           uri:
             Platform.OS === "ios"
@@ -1012,8 +1170,8 @@ export default function CreateItemScreen() {
       formData.append("item_name", itemName);
       formData.append("created_by", String(user?.id));
       formData.append("comment", comment);
-      formData.append("condition", JSON.stringify(condition));
-      formData.append("status", JSON.stringify(status));
+      formData.append("condition", JSON.stringify(conditionPayload));
+      formData.append("status", JSON.stringify(statusPayload));
 
       selectedMedia.forEach((mediaItem, index) => {
         const fileUri =
@@ -1148,20 +1306,23 @@ export default function CreateItemScreen() {
         />
 
         <Text style={styles.inputLabel}>Item Type</Text>
-        <MultiSelectPicker
-          onAdd={(val: string) => setItemType([...itemType, val])}
-          options={ITEM_TYPES}
-          selectedValues={itemType}
-          onRemove={(val: string) =>
-            setItemType(itemType.filter((t) => t !== val))
-          }
-          placeholder="Select Item Types"
-        />
+        <View style={styles.itemTypePickerSpacing}>
+          <MultiSelectPicker
+            onAdd={(val: string) => setItemType([...itemType, val])}
+            options={ITEM_TYPES}
+            selectedValues={itemType}
+            onRemove={(val: string) =>
+              setItemType(itemType.filter((t) => t !== val))
+            }
+            placeholder="Select Item Types"
+          />
+        </View>
 
         <Text style={styles.inputLabel}>Item Name</Text>
         <View style={styles.inputBox}>
-          <TextInput
+          <SmartTextInput
             onChangeText={setItemName}
+            suggestions={AUTO_COMPLETE_SUGGESTIONS}
             placeholder="e.g. Electric Fan"
             placeholderTextColor="#999"
             style={styles.textInput}
@@ -1195,9 +1356,10 @@ export default function CreateItemScreen() {
 
         <Text style={styles.inputLabel}>Comment</Text>
         <View style={[styles.inputBox, styles.commentBox]}>
-          <TextInput
+          <SmartTextInput
             multiline
             onChangeText={setComment}
+            suggestions={AUTO_COMPLETE_SUGGESTIONS}
             placeholder="Add comments here..."
             placeholderTextColor="#999"
             style={styles.commentInput}
@@ -1286,6 +1448,7 @@ export default function CreateItemScreen() {
             style={styles.cameraPreview}
             facing="back"
             mode="picture"
+            zoom={cameraZoom}
             onCameraReady={() => setCameraReady(true)}
           >
             <View style={styles.cameraTopBar}>
@@ -1332,6 +1495,42 @@ export default function CreateItemScreen() {
                   </Text>
                 }
               />
+
+              <View style={styles.cameraZoomControls}>
+                <TouchableOpacity
+                  onPress={() => setCameraZoom(0)}
+                  style={[
+                    styles.cameraZoomButton,
+                    cameraZoom === 0 && styles.cameraZoomButtonActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.cameraZoomText,
+                      cameraZoom === 0 && styles.cameraZoomTextActive,
+                    ]}
+                  >
+                    0.5x
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => setCameraZoom(0.5)}
+                  style={[
+                    styles.cameraZoomButton,
+                    cameraZoom === 0.5 && styles.cameraZoomButtonActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.cameraZoomText,
+                      cameraZoom === 0.5 && styles.cameraZoomTextActive,
+                    ]}
+                  >
+                    1x
+                  </Text>
+                </TouchableOpacity>
+              </View>
 
               <View style={styles.cameraControls}>
                 <TouchableOpacity
@@ -1466,6 +1665,27 @@ const styles = StyleSheet.create({
   aiHelperText: {
     fontSize: 12,
     color: "#333",
+  },
+
+  smartInputWrapper: {
+    flex: 1,
+  },
+  suggestionButton: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F1F8E9",
+    borderWidth: 1,
+    borderColor: "#C5E1A5",
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginTop: 6,
+  },
+  suggestionText: {
+    color: "#5B7F1F",
+    fontSize: 12,
+    marginLeft: 4,
   },
 
   inputLabel: {
@@ -1630,7 +1850,11 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   optionList: {
-    maxHeight: 300,
+    maxHeight: 360,
+    flexShrink: 1,
+  },
+  optionListContent: {
+    paddingBottom: 8,
   },
   modalItem: {
     paddingVertical: 15,
@@ -1775,6 +1999,33 @@ const styles = StyleSheet.create({
     fontSize: 13,
     opacity: 0.8,
     paddingVertical: 20,
+  },
+  cameraZoomControls: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 8,
+  },
+  cameraZoomButton: {
+    minWidth: 58,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 18,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cameraZoomButtonActive: {
+    backgroundColor: "#FFF",
+  },
+  cameraZoomText: {
+    color: "#FFF",
+    fontSize: 14,
+    fontWeight: "bold",
+  },
+  cameraZoomTextActive: {
+    color: "#000",
   },
   cameraControls: {
     flexDirection: "row",

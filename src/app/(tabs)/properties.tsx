@@ -28,6 +28,8 @@ export interface BackendPropertyData {
   updated_at: string;
 }
 
+type PropertyFilterType = "PM" | "NOT_PM";
+
 export default function PropertiesScreen() {
   const [properties, setProperties] = useState<BackendPropertyData[]>([]);
   const [page, setPage] = useState(1);
@@ -39,32 +41,49 @@ export default function PropertiesScreen() {
   const [searchInput, setSearchInput] = useState("");
   const [activeSearch, setActiveSearch] = useState("");
 
+  // Default is PM
+  const [selectedPropertyFilter, setSelectedPropertyFilter] =
+    useState<PropertyFilterType>("PM");
+  const [activePropertyFilter, setActivePropertyFilter] =
+    useState<PropertyFilterType>("PM");
+
+  const getPropertiesEndpoint = (filterType: PropertyFilterType) => {
+    return filterType === "PM" ? "/pm/pmProperties" : "/pm/notPmProperties";
+  };
+
   const fetchProperties = async (
     pageNumber: number,
     searchTerm: string = "",
+    filterType: PropertyFilterType = activePropertyFilter,
   ) => {
-    console.log(`Search-1: "${searchTerm}"`);
     if (isLoadingMore || (!hasMoreData && pageNumber !== 1)) return;
 
     setIsLoadingMore(true);
+
     try {
-      console.log(`Search-2: "${searchTerm}"`);
+      const endpoint = getPropertiesEndpoint(filterType);
+
       const response = await api.get(
-        `/pm/pmProperties?page=${pageNumber}&limit=10&search=${encodeURIComponent(searchTerm)}`,
+        `${endpoint}?page=${pageNumber}&limit=10&search=${encodeURIComponent(
+          searchTerm,
+        )}`,
       );
 
-      const newProperties = response.data.properties;
+      const newProperties = response.data.properties || [];
 
-      if (newProperties.length === 0) {
+      if (pageNumber === 1) {
+        setProperties(newProperties);
+      } else {
+        setProperties((prev) => [...prev, ...newProperties]);
+      }
+
+      if (newProperties.length < 10) {
         setHasMoreData(false);
       } else {
-        if (pageNumber === 1) {
-          setProperties(newProperties);
-        } else {
-          setProperties((prev) => [...prev, ...newProperties]);
-        }
-        setPage(pageNumber + 1);
+        setHasMoreData(true);
       }
+
+      setPage(pageNumber + 1);
     } catch (error) {
       console.error("Failed to load properties", error);
     } finally {
@@ -73,24 +92,42 @@ export default function PropertiesScreen() {
   };
 
   useEffect(() => {
-    fetchProperties(1, activeSearch);
+    fetchProperties(1, activeSearch, activePropertyFilter);
   }, []);
 
   const handleApplyFilter = () => {
     setActiveSearch(searchInput);
+    setActivePropertyFilter(selectedPropertyFilter);
     setHasMoreData(true);
-    fetchProperties(1, searchInput);
-    setIsFilterModalVisible(false); // Close modal on search
+    setPage(1);
+    setProperties([]);
+    fetchProperties(1, searchInput, selectedPropertyFilter);
+    setIsFilterModalVisible(false);
+  };
+
+  const handleResetFilter = () => {
+    setSearchInput("");
+    setActiveSearch("");
+    setSelectedPropertyFilter("PM");
+    setActivePropertyFilter("PM");
+    setHasMoreData(true);
+    setPage(1);
+    setProperties([]);
+    fetchProperties(1, "", "PM");
+    setIsFilterModalVisible(false);
   };
 
   const renderFooter = () => {
     if (!isLoadingMore) return null;
+
     return (
       <View style={{ paddingVertical: 20 }}>
         <ActivityIndicator size="large" color="#003366" />
       </View>
     );
   };
+
+  const activeFilterLabel = activePropertyFilter === "PM" ? "PM" : "Not PM";
 
   return (
     <SafeAreaView style={styles.container}>
@@ -99,19 +136,15 @@ export default function PropertiesScreen() {
         <Text style={styles.headerTitle}>PROPERTIES</Text>
 
         <View style={styles.headerRightControls}>
-          {/* Show active search term badge if searching */}
-          {activeSearch !== "" && (
+          {(activeSearch !== "" || activePropertyFilter !== "PM") && (
             <TouchableOpacity
               style={styles.activeSearchBadge}
-              onPress={() => {
-                setSearchInput("");
-                setActiveSearch("");
-                setHasMoreData(true);
-                fetchProperties(1, ""); // Reset list
-              }}
+              onPress={handleResetFilter}
             >
               <Text style={styles.activeSearchText} numberOfLines={1}>
-                {activeSearch}
+                {activeSearch
+                  ? `${activeFilterLabel}: ${activeSearch}`
+                  : activeFilterLabel}
               </Text>
               <Ionicons
                 name="close-circle"
@@ -122,10 +155,13 @@ export default function PropertiesScreen() {
             </TouchableOpacity>
           )}
 
-          {/* Icon matches the 3-line filter button in your screenshot */}
           <TouchableOpacity
             style={styles.filterIconBtn}
-            onPress={() => setIsFilterModalVisible(true)}
+            onPress={() => {
+              setSearchInput(activeSearch);
+              setSelectedPropertyFilter(activePropertyFilter);
+              setIsFilterModalVisible(true);
+            }}
           >
             <Ionicons name="options-outline" size={22} color="#333" />
           </TouchableOpacity>
@@ -139,31 +175,35 @@ export default function PropertiesScreen() {
         renderItem={({ item }) => (
           <PropertyCard
             id={item.id}
-            // Safely fall back to empty strings if data is missing
-            propertyName={`${item.unit_number || ""} ${item.property_name || ""}`.trim()}
+            propertyName={`${item.unit_number || ""} ${
+              item.property_name || ""
+            }`.trim()}
             ownerName={
               item.owner_type === "Corporation"
                 ? item.company_name
-                : `${item.english_first_name || ""} ${item.english_last_name || ""}`.trim()
+                : `${item.english_first_name || ""} ${
+                    item.english_last_name || ""
+                  }`.trim()
             }
             date={item.updated_at}
             onPress={() => router.push(`/(tabs)/property/${item.id}`)}
           />
         )}
-        onEndReached={() => fetchProperties(page, activeSearch)}
+        onEndReached={() =>
+          fetchProperties(page, activeSearch, activePropertyFilter)
+        }
         onEndReachedThreshold={0.5}
         ListFooterComponent={renderFooter}
         ListEmptyComponent={
           !isLoadingMore ? (
             <Text style={styles.emptyText}>
-              No properties found matching your search.
+              No properties found matching your filter.
             </Text>
           ) : null
         }
       />
 
       {/* --- FILTER MODAL --- */}
-      {/* Find your Modal tag and change "slide" to "fade" */}
       <Modal
         visible={isFilterModalVisible}
         animationType="fade"
@@ -178,6 +218,48 @@ export default function PropertiesScreen() {
                 style={styles.closeBtn}
               >
                 <Ionicons name="close" size={24} color="#666" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.searchLabel}>Property Type</Text>
+
+            <View style={styles.propertyTypeDropdown}>
+              <TouchableOpacity
+                style={[
+                  styles.propertyTypeOption,
+                  selectedPropertyFilter === "PM" &&
+                    styles.propertyTypeOptionActive,
+                ]}
+                onPress={() => setSelectedPropertyFilter("PM")}
+              >
+                <Text
+                  style={[
+                    styles.propertyTypeText,
+                    selectedPropertyFilter === "PM" &&
+                      styles.propertyTypeTextActive,
+                  ]}
+                >
+                  PM
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.propertyTypeOption,
+                  selectedPropertyFilter === "NOT_PM" &&
+                    styles.propertyTypeOptionActive,
+                ]}
+                onPress={() => setSelectedPropertyFilter("NOT_PM")}
+              >
+                <Text
+                  style={[
+                    styles.propertyTypeText,
+                    selectedPropertyFilter === "NOT_PM" &&
+                      styles.propertyTypeTextActive,
+                  ]}
+                >
+                  Not PM
+                </Text>
               </TouchableOpacity>
             </View>
 
@@ -212,6 +294,13 @@ export default function PropertiesScreen() {
             >
               <Text style={styles.applyFilterBtnText}>Apply Filter</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.resetFilterBtn}
+              onPress={handleResetFilter}
+            >
+              <Text style={styles.resetFilterBtnText}>Reset to PM</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -220,9 +309,8 @@ export default function PropertiesScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#E5E5E5" }, // Matching your light gray background
+  container: { flex: 1, backgroundColor: "#E5E5E5" },
 
-  // Header
   headerContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -244,12 +332,12 @@ const styles = StyleSheet.create({
   activeSearchBadge: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#E3F2FD", // Light blue pill
+    backgroundColor: "#E3F2FD",
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 16,
     marginRight: 10,
-    maxWidth: 160,
+    maxWidth: 180,
   },
   activeSearchText: {
     color: "#003380",
@@ -266,7 +354,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
-  // --- Modal Styles ---
   modalOverlayFilter: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -274,14 +361,14 @@ const styles = StyleSheet.create({
   },
   filterModalContent: {
     backgroundColor: "#FFFFFF",
-    borderBottomLeftRadius: 20, // <--- CHANGED: Rounded corners on bottom now
+    borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
     padding: 25,
-    paddingTop: Platform.OS === "ios" ? 60 : 40, // <--- CHANGED: Adds space for notch/status bar
+    paddingTop: Platform.OS === "ios" ? 60 : 40,
     paddingBottom: 25,
     elevation: 5,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 }, // <--- CHANGED: Shadow points down
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 5,
   },
@@ -295,7 +382,44 @@ const styles = StyleSheet.create({
   filterTitle: { fontSize: 18, fontWeight: "bold", color: "#000" },
   closeBtn: { padding: 4 },
 
-  searchLabel: { fontSize: 12, color: "#666", marginBottom: 5, marginLeft: 2 },
+  searchLabel: {
+    fontSize: 12,
+    color: "#666",
+    marginBottom: 5,
+    marginLeft: 2,
+  },
+
+  propertyTypeDropdown: {
+    flexDirection: "row",
+    backgroundColor: "#F5F5F5",
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#EEE",
+    padding: 4,
+    marginBottom: 18,
+  },
+
+  propertyTypeOption: {
+    flex: 1,
+    paddingVertical: 11,
+    borderRadius: 5,
+    alignItems: "center",
+  },
+
+  propertyTypeOptionActive: {
+    backgroundColor: "#003380",
+  },
+
+  propertyTypeText: {
+    fontSize: 14,
+    color: "#555",
+    fontWeight: "600",
+  },
+
+  propertyTypeTextActive: {
+    color: "#FFFFFF",
+  },
+
   searchBox: {
     flexDirection: "row",
     alignItems: "center",
@@ -311,10 +435,29 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, fontSize: 14, color: "#333" },
 
   applyFilterBtn: {
-    backgroundColor: "#003380", // Dark blue from your screenshot
+    backgroundColor: "#003380",
     paddingVertical: 15,
     borderRadius: 6,
     alignItems: "center",
   },
-  applyFilterBtnText: { color: "#FFFFFF", fontSize: 16, fontWeight: "bold" },
+  applyFilterBtnText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+
+  resetFilterBtn: {
+    paddingVertical: 13,
+    borderRadius: 6,
+    alignItems: "center",
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: "#DDD",
+    backgroundColor: "#FFF",
+  },
+  resetFilterBtnText: {
+    color: "#333",
+    fontSize: 14,
+    fontWeight: "600",
+  },
 });
