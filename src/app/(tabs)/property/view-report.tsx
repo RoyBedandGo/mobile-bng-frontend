@@ -14,7 +14,10 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { api } from "../../../lib/api";
 
 import * as FileSystem from "expo-file-system/legacy";
@@ -24,9 +27,15 @@ import * as Sharing from "expo-sharing";
 const ITEM_TYPES = [
   "Sanitary",
   "Electrical",
-  "Appliance",
-  "Fixture",
-  "Furniture",
+  "Appliances",
+  "Fixtures",
+  "Furnitures",
+  "Kitchenware",
+  "Electronics",
+  "Linens",
+  "Decorations",
+  "Cleaning Tools",
+  "Keys & Access",
   "Area",
 ];
 
@@ -42,6 +51,7 @@ const MultiSelectDropdown = ({
   selectedValues: string[];
   toggleValue: (val: string) => void;
 }) => {
+  const insets = useSafeAreaInsets();
   const [isOpen, setIsOpen] = useState(false);
 
   return (
@@ -80,14 +90,21 @@ const MultiSelectDropdown = ({
           activeOpacity={1}
           onPress={() => setIsOpen(false)}
         >
-          <View style={styles.optionsModalContent}>
+          <View
+            style={[
+              styles.optionsModalContent,
+              { paddingBottom: Math.max(insets.bottom, 24) + 16 },
+            ]}
+          >
             <Text style={styles.modalHeader}>Select {label}</Text>
             <FlatList
               data={options}
               keyExtractor={(item) => item}
               style={styles.optionList}
+              contentContainerStyle={styles.optionListContent}
               nestedScrollEnabled
               showsVerticalScrollIndicator
+              keyboardShouldPersistTaps="handled"
               renderItem={({ item }) => {
                 const isSelected = selectedValues.includes(item);
                 return (
@@ -121,6 +138,7 @@ const MultiSelectDropdown = ({
 };
 
 export default function ViewReportScreen() {
+  const insets = useSafeAreaInsets();
   const { property_id, report_type, requires_contract } =
     useLocalSearchParams();
 
@@ -642,9 +660,8 @@ export default function ViewReportScreen() {
     }
 
     const conditionText =
-      parsedCondition.length > 0 ? parsedCondition.join(", ") : "Unknown";
-    const statusText =
-      parsedStatus.length > 0 ? parsedStatus.join(", ") : "Unknown";
+      parsedCondition.length > 0 ? parsedCondition.join(", ") : "";
+    const statusText = parsedStatus.length > 0 ? parsedStatus.join(", ") : "";
 
     // Check if the item has recovery data attached
     const isRecovered = !!item.recovery_id || !!item.recovery_title;
@@ -979,11 +996,22 @@ export default function ViewReportScreen() {
           activeOpacity={1}
           onPress={() => setShowAreaModal(false)}
         >
-          <View style={styles.modalContent}>
+          <View
+            style={[
+              styles.modalContent,
+              styles.areaModalContent,
+              { paddingBottom: Math.max(insets.bottom, 24) + 16 },
+            ]}
+          >
             <Text style={styles.modalHeader}>Select Area</Text>
             <FlatList
               data={areaFilterOptions}
               keyExtractor={(item) => item}
+              style={styles.areaOptionList}
+              contentContainerStyle={styles.optionListContent}
+              nestedScrollEnabled
+              showsVerticalScrollIndicator
+              keyboardShouldPersistTaps="handled"
               renderItem={({ item }) => (
                 <TouchableOpacity
                   style={styles.modalItem}
@@ -1118,6 +1146,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#FFFFFF",
     paddingVertical: 12,
+    marginBottom: 10,
     borderTopWidth: 1,
     borderBottomWidth: 1,
     borderColor: "#E0E0E0",
@@ -1259,7 +1288,14 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 15,
     borderTopRightRadius: 15,
     maxHeight: "60%",
-    paddingVertical: 10,
+    paddingTop: 10,
+    paddingBottom: 10,
+  },
+  areaModalContent: {
+    maxHeight: "70%",
+  },
+  areaOptionList: {
+    maxHeight: 420,
   },
   modalHeader: {
     fontSize: 16,
@@ -1287,11 +1323,14 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFF",
     borderTopLeftRadius: 15,
     borderTopRightRadius: 15,
-    paddingVertical: 20,
-    maxHeight: "50%",
+    paddingTop: 20,
+    maxHeight: "70%",
   },
   optionList: {
-    maxHeight: 300,
+    maxHeight: 380,
+  },
+  optionListContent: {
+    paddingBottom: 12,
   },
   optionItem: {
     paddingVertical: 15,
@@ -1328,7 +1367,7 @@ const styles = StyleSheet.create({
   },
   dateText: { color: "#333", fontSize: 12 },
 
-  inputGroup: { marginBottom: 15 },
+  inputGroup: { marginBottom: 22 },
   inputLabel: { fontSize: 12, color: "#333", marginBottom: 6 },
   dropdownBox: {
     backgroundColor: "#F5F5F5",

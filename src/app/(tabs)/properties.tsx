@@ -26,9 +26,23 @@ export interface BackendPropertyData {
   owner_type: string;
   company_name: string;
   updated_at: string;
+  created_at?: string;
+  property_created_at?: string;
+  remarks_pm?: string;
 }
 
 type PropertyFilterType = "PM" | "NOT_PM";
+type PmRemarksFilterType = "" | "For Lease" | "For Sale" | "For Airbnb";
+
+const PM_REMARKS_OPTIONS: {
+  label: string;
+  value: PmRemarksFilterType;
+}[] = [
+  { label: "None", value: "" },
+  { label: "For Lease", value: "For Lease" },
+  { label: "For Sale", value: "For Sale" },
+  { label: "For Airbnb", value: "For Airbnb" },
+];
 
 export default function PropertiesScreen() {
   const [properties, setProperties] = useState<BackendPropertyData[]>([]);
@@ -36,25 +50,45 @@ export default function PropertiesScreen() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMoreData, setHasMoreData] = useState(true);
 
-  // Search & Modal States
   const [isFilterModalVisible, setIsFilterModalVisible] = useState(false);
   const [searchInput, setSearchInput] = useState("");
   const [activeSearch, setActiveSearch] = useState("");
 
-  // Default is PM
   const [selectedPropertyFilter, setSelectedPropertyFilter] =
     useState<PropertyFilterType>("PM");
   const [activePropertyFilter, setActivePropertyFilter] =
     useState<PropertyFilterType>("PM");
 
+  const [selectedPmRemarks, setSelectedPmRemarks] =
+    useState<PmRemarksFilterType>("");
+  const [activePmRemarks, setActivePmRemarks] =
+    useState<PmRemarksFilterType>("");
+
   const getPropertiesEndpoint = (filterType: PropertyFilterType) => {
     return filterType === "PM" ? "/pm/pmProperties" : "/pm/notPmProperties";
+  };
+
+  const isNewProperty = (item: BackendPropertyData) => {
+    const createdValue = item.property_created_at || item.created_at;
+
+    if (!createdValue) return false;
+
+    const createdDate = new Date(createdValue);
+
+    if (Number.isNaN(createdDate.getTime())) return false;
+
+    const now = new Date();
+    const diffMs = now.getTime() - createdDate.getTime();
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+
+    return diffDays >= 0 && diffDays <= 20;
   };
 
   const fetchProperties = async (
     pageNumber: number,
     searchTerm: string = "",
     filterType: PropertyFilterType = activePropertyFilter,
+    pmRemarks: PmRemarksFilterType = activePmRemarks,
   ) => {
     if (isLoadingMore || (!hasMoreData && pageNumber !== 1)) return;
 
@@ -63,11 +97,17 @@ export default function PropertiesScreen() {
     try {
       const endpoint = getPropertiesEndpoint(filterType);
 
-      const response = await api.get(
-        `${endpoint}?page=${pageNumber}&limit=10&search=${encodeURIComponent(
-          searchTerm,
-        )}`,
-      );
+      const params = new URLSearchParams({
+        page: String(pageNumber),
+        limit: "10",
+        search: searchTerm,
+      });
+
+      if (pmRemarks) {
+        params.append("pm_remarks", pmRemarks);
+      }
+
+      const response = await api.get(`${endpoint}?${params.toString()}`);
 
       const newProperties = response.data.properties || [];
 
@@ -77,12 +117,7 @@ export default function PropertiesScreen() {
         setProperties((prev) => [...prev, ...newProperties]);
       }
 
-      if (newProperties.length < 10) {
-        setHasMoreData(false);
-      } else {
-        setHasMoreData(true);
-      }
-
+      setHasMoreData(newProperties.length >= 10);
       setPage(pageNumber + 1);
     } catch (error) {
       console.error("Failed to load properties", error);
@@ -92,16 +127,19 @@ export default function PropertiesScreen() {
   };
 
   useEffect(() => {
-    fetchProperties(1, activeSearch, activePropertyFilter);
+    fetchProperties(1, activeSearch, activePropertyFilter, activePmRemarks);
   }, []);
 
   const handleApplyFilter = () => {
     setActiveSearch(searchInput);
     setActivePropertyFilter(selectedPropertyFilter);
+    setActivePmRemarks(selectedPmRemarks);
     setHasMoreData(true);
     setPage(1);
     setProperties([]);
-    fetchProperties(1, searchInput, selectedPropertyFilter);
+
+    fetchProperties(1, searchInput, selectedPropertyFilter, selectedPmRemarks);
+
     setIsFilterModalVisible(false);
   };
 
@@ -110,10 +148,14 @@ export default function PropertiesScreen() {
     setActiveSearch("");
     setSelectedPropertyFilter("PM");
     setActivePropertyFilter("PM");
+    setSelectedPmRemarks("");
+    setActivePmRemarks("");
     setHasMoreData(true);
     setPage(1);
     setProperties([]);
-    fetchProperties(1, "", "PM");
+
+    fetchProperties(1, "", "PM", "");
+
     setIsFilterModalVisible(false);
   };
 
@@ -129,23 +171,34 @@ export default function PropertiesScreen() {
 
   const activeFilterLabel = activePropertyFilter === "PM" ? "PM" : "Not PM";
 
+  const filterIsActive =
+    activeSearch !== "" ||
+    activePropertyFilter !== "PM" ||
+    activePmRemarks !== "";
+
+  const badgeLabel = [
+    activeFilterLabel,
+    activePmRemarks || "",
+    activeSearch || "",
+  ]
+    .filter(Boolean)
+    .join(": ");
+
   return (
     <SafeAreaView style={styles.container}>
-      {/* --- HEADER WITH FILTER ICON --- */}
       <View style={styles.headerContainer}>
         <Text style={styles.headerTitle}>PROPERTIES</Text>
 
         <View style={styles.headerRightControls}>
-          {(activeSearch !== "" || activePropertyFilter !== "PM") && (
+          {filterIsActive && (
             <TouchableOpacity
               style={styles.activeSearchBadge}
               onPress={handleResetFilter}
             >
               <Text style={styles.activeSearchText} numberOfLines={1}>
-                {activeSearch
-                  ? `${activeFilterLabel}: ${activeSearch}`
-                  : activeFilterLabel}
+                {badgeLabel}
               </Text>
+
               <Ionicons
                 name="close-circle"
                 size={14}
@@ -160,6 +213,7 @@ export default function PropertiesScreen() {
             onPress={() => {
               setSearchInput(activeSearch);
               setSelectedPropertyFilter(activePropertyFilter);
+              setSelectedPmRemarks(activePmRemarks);
               setIsFilterModalVisible(true);
             }}
           >
@@ -172,25 +226,42 @@ export default function PropertiesScreen() {
         data={properties}
         keyExtractor={(item, index) => item.id.toString() + index}
         contentContainerStyle={styles.listContent}
-        renderItem={({ item }) => (
-          <PropertyCard
-            id={item.id}
-            propertyName={`${item.unit_number || ""} ${
-              item.property_name || ""
-            }`.trim()}
-            ownerName={
-              item.owner_type === "Corporation"
-                ? item.company_name
-                : `${item.english_first_name || ""} ${
-                    item.english_last_name || ""
-                  }`.trim()
-            }
-            date={item.updated_at}
-            onPress={() => router.push(`/(tabs)/property/${item.id}`)}
-          />
-        )}
+        renderItem={({ item }) => {
+          const isNew = isNewProperty(item);
+
+          return (
+            <View style={[styles.propertyCardWrap]}>
+              {isNew && (
+                <View style={styles.newBadge}>
+                  <Text style={styles.newBadgeText}>NEW</Text>
+                </View>
+              )}
+
+              <PropertyCard
+                id={item.id}
+                propertyName={`${item.unit_number || ""} ${
+                  item.property_name || ""
+                }`.trim()}
+                ownerName={
+                  item.owner_type === "Corporation"
+                    ? item.company_name
+                    : `${item.english_first_name || ""} ${
+                        item.english_last_name || ""
+                      }`.trim()
+                }
+                date={item.updated_at}
+                onPress={() => router.push(`/(tabs)/property/${item.id}`)}
+              />
+            </View>
+          );
+        }}
         onEndReached={() =>
-          fetchProperties(page, activeSearch, activePropertyFilter)
+          fetchProperties(
+            page,
+            activeSearch,
+            activePropertyFilter,
+            activePmRemarks,
+          )
         }
         onEndReachedThreshold={0.5}
         ListFooterComponent={renderFooter}
@@ -203,7 +274,6 @@ export default function PropertiesScreen() {
         }
       />
 
-      {/* --- FILTER MODAL --- */}
       <Modal
         visible={isFilterModalVisible}
         animationType="fade"
@@ -213,6 +283,7 @@ export default function PropertiesScreen() {
           <View style={styles.filterModalContent}>
             <View style={styles.filterModalHeader}>
               <Text style={styles.filterTitle}>Properties Filter</Text>
+
               <TouchableOpacity
                 onPress={() => setIsFilterModalVisible(false)}
                 style={styles.closeBtn}
@@ -263,7 +334,34 @@ export default function PropertiesScreen() {
               </TouchableOpacity>
             </View>
 
+            <Text style={styles.searchLabel}>PM Remarks</Text>
+
+            <View style={styles.pmRemarksDropdown}>
+              {PM_REMARKS_OPTIONS.map((option) => (
+                <TouchableOpacity
+                  key={option.label}
+                  style={[
+                    styles.pmRemarksOption,
+                    selectedPmRemarks === option.value &&
+                      styles.pmRemarksOptionActive,
+                  ]}
+                  onPress={() => setSelectedPmRemarks(option.value)}
+                >
+                  <Text
+                    style={[
+                      styles.pmRemarksText,
+                      selectedPmRemarks === option.value &&
+                        styles.pmRemarksTextActive,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
             <Text style={styles.searchLabel}>Search Owner or Properties</Text>
+
             <View style={styles.searchBox}>
               <Ionicons
                 name="search-outline"
@@ -271,6 +369,7 @@ export default function PropertiesScreen() {
                 color="#999"
                 style={styles.searchIcon}
               />
+
               <TextInput
                 style={styles.searchInput}
                 value={searchInput}
@@ -281,6 +380,7 @@ export default function PropertiesScreen() {
                 onSubmitEditing={handleApplyFilter}
                 autoFocus={true}
               />
+
               {searchInput.length > 0 && (
                 <TouchableOpacity onPress={() => setSearchInput("")}>
                   <Ionicons name="close-circle" size={18} color="#CCC" />
@@ -318,8 +418,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 15,
   },
+
   headerTitle: { fontSize: 20, fontWeight: "bold", color: "#333" },
-  headerRightControls: { flexDirection: "row", alignItems: "center" },
+
+  headerRightControls: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
 
   filterIconBtn: {
     padding: 6,
@@ -337,8 +442,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 16,
     marginRight: 10,
-    maxWidth: 180,
+    maxWidth: 190,
   },
+
   activeSearchText: {
     color: "#003380",
     fontSize: 12,
@@ -346,7 +452,42 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
 
-  listContent: { paddingHorizontal: 15, paddingBottom: 20, paddingTop: 5 },
+  listContent: {
+    paddingHorizontal: 15,
+    paddingBottom: 20,
+    paddingTop: 5,
+  },
+
+  propertyCardWrap: {
+    borderRadius: 12,
+    marginBottom: 10,
+    position: "relative",
+  },
+
+  // newPropertyHighlight: {
+  //   backgroundColor: "#ffffff",
+  //   borderWidth: 0,
+  //   borderColor: "#ffffff",
+  //   padding: 1,
+  // },
+
+  newBadge: {
+    position: "absolute",
+    top: 6,
+    right: 8,
+    backgroundColor: "#4CAF50",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    zIndex: 10,
+  },
+
+  newBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "700",
+  },
+
   emptyText: {
     textAlign: "center",
     color: "#666",
@@ -359,6 +500,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "flex-start",
   },
+
   filterModalContent: {
     backgroundColor: "#FFFFFF",
     borderBottomLeftRadius: 20,
@@ -379,7 +521,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 20,
   },
-  filterTitle: { fontSize: 18, fontWeight: "bold", color: "#000" },
+
+  filterTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#000",
+  },
+
   closeBtn: { padding: 4 },
 
   searchLabel: {
@@ -420,6 +568,43 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
   },
 
+  pmRemarksDropdown: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    backgroundColor: "#F5F5F5",
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#EEE",
+    padding: 4,
+    marginBottom: 18,
+    gap: 6,
+  },
+
+  pmRemarksOption: {
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 5,
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E5E5E5",
+  },
+
+  pmRemarksOptionActive: {
+    backgroundColor: "#003380",
+    borderColor: "#003380",
+  },
+
+  pmRemarksText: {
+    fontSize: 13,
+    color: "#555",
+    fontWeight: "600",
+  },
+
+  pmRemarksTextActive: {
+    color: "#FFFFFF",
+  },
+
   searchBox: {
     flexDirection: "row",
     alignItems: "center",
@@ -431,8 +616,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#EEE",
   },
+
   searchIcon: { marginRight: 8 },
-  searchInput: { flex: 1, fontSize: 14, color: "#333" },
+
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: "#333",
+  },
 
   applyFilterBtn: {
     backgroundColor: "#003380",
@@ -440,6 +631,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     alignItems: "center",
   },
+
   applyFilterBtnText: {
     color: "#FFFFFF",
     fontSize: 16,
@@ -455,6 +647,7 @@ const styles = StyleSheet.create({
     borderColor: "#DDD",
     backgroundColor: "#FFF",
   },
+
   resetFilterBtnText: {
     color: "#333",
     fontSize: 14,

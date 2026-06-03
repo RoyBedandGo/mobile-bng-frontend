@@ -6,7 +6,7 @@ import * as ImagePicker from "expo-image-picker";
 import * as MediaLibrary from "expo-media-library";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useVideoPlayer, VideoView } from "expo-video";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -27,6 +27,8 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
+import Svg, { Path } from "react-native-svg";
+import { captureRef } from "react-native-view-shot";
 import { api } from "../../../lib/api";
 import { SyncManager } from "../../../lib/SyncManager"; // <-- NEW
 
@@ -34,9 +36,15 @@ import { SyncManager } from "../../../lib/SyncManager"; // <-- NEW
 const ITEM_TYPES = [
   "Sanitary",
   "Electrical",
-  "Appliance",
-  "Fixture",
-  "Furniture",
+  "Appliances",
+  "Fixtures",
+  "Furnitures",
+  "Kitchenware",
+  "Electronics",
+  "Linens",
+  "Decorations",
+  "Cleaning Tools",
+  "Keys & Access",
   "Area",
 ];
 
@@ -587,16 +595,6 @@ const DynamicMultiSelectPicker = ({
 
 // --- MAIN SCREEN ---
 export default function ItemDetailsScreen() {
-  const handleSetMediaAsFirst = (index: number) => {
-    setImages((prevImages) => {
-      if (index <= 0 || index >= prevImages.length) return prevImages;
-
-      const updatedImages = [...prevImages];
-      const selectedMedia = updatedImages.splice(index, 1)[0];
-
-      return [selectedMedia, ...updatedImages];
-    });
-  };
   const {
     item_id,
     report_id,
@@ -654,6 +652,16 @@ export default function ItemDetailsScreen() {
     url: string;
     type: "image" | "video";
   } | null>(null);
+  const [selectedMediaIndex, setSelectedMediaIndex] = useState<number | null>(
+    null,
+  );
+
+  // Image edit/drawing states
+  const editImageRef = useRef<View>(null);
+  const [isDrawingMode, setIsDrawingMode] = useState(false);
+  const [drawingPaths, setDrawingPaths] = useState<string[]>([]);
+  const [currentPath, setCurrentPath] = useState("");
+  const [isSavingEditedImage, setIsSavingEditedImage] = useState(false);
 
   const isVideo = (url: string | null) =>
     !!url?.toLowerCase().match(/\.(mp4|mov|avi|mkv|webm)$/);
@@ -727,6 +735,184 @@ export default function ItemDetailsScreen() {
       );
     } finally {
       setIsDownloading(false);
+    }
+  };
+
+  const resetImageEditor = () => {
+    setIsDrawingMode(false);
+    setDrawingPaths([]);
+    setCurrentPath("");
+  };
+
+  const handleCloseMediaViewer = () => {
+    resetImageEditor();
+    setSelectedMedia(null);
+    setSelectedMediaIndex(null);
+  };
+
+  const ensureLocalImageUri = async (imageUri: string) => {
+    if (!imageUri.startsWith("http")) return imageUri;
+
+    const fileName = `edit_source_${Date.now()}.jpg`;
+    const localPath = `${FileSystem.cacheDirectory}${fileName}`;
+    const downloaded = await FileSystem.downloadAsync(imageUri, localPath);
+
+    return downloaded.uri;
+  };
+
+  const replaceSelectedImage = (newUri: string) => {
+    if (selectedMediaIndex === null) return;
+
+    setImages((prevImages) => {
+      const updatedImages = [...prevImages];
+      updatedImages[selectedMediaIndex] = newUri;
+      return updatedImages;
+    });
+
+    setSelectedMedia({ url: newUri, type: "image" });
+
+    // Make sure the edited local file will be uploaded when the user taps UPDATE.
+    if (!isEditing) {
+      setIsEditing(true);
+    }
+  };
+
+  const handleDrawStart = (event: any) => {
+    if (!isDrawingMode || selectedMedia?.type !== "image") return;
+
+    const { locationX, locationY } = event.nativeEvent;
+    setCurrentPath(`M${locationX},${locationY}`);
+  };
+
+  const handleDrawMove = (event: any) => {
+    if (!isDrawingMode || selectedMedia?.type !== "image") return;
+
+    const { locationX, locationY } = event.nativeEvent;
+    setCurrentPath((prevPath) => `${prevPath} L${locationX},${locationY}`);
+  };
+
+  const handleDrawEnd = () => {
+    if (!isDrawingMode || !currentPath) return;
+
+    setDrawingPaths((prevPaths) => [...prevPaths, currentPath]);
+    setCurrentPath("");
+  };
+
+  const handleUndoDrawing = () => {
+    setDrawingPaths((prevPaths) => prevPaths.slice(0, -1));
+  };
+
+  const handleClearDrawing = () => {
+    setDrawingPaths([]);
+    setCurrentPath("");
+  };
+
+  const handleSaveDrawing = async () => {
+    try {
+      if (selectedMedia?.type !== "image" || selectedMediaIndex === null) {
+        return;
+      }
+
+      if (!editImageRef.current) {
+        Alert.alert("Error", "Unable to capture edited image.");
+        return;
+      }
+
+      setIsSavingEditedImage(true);
+
+      const editedUri = await captureRef(editImageRef, {
+        format: "jpg",
+        quality: 0.9,
+        result: "tmpfile",
+      });
+
+      replaceSelectedImage(editedUri);
+      resetImageEditor();
+
+      Alert.alert(
+        "Saved Locally",
+        "Edited image saved. Tap UPDATE to save it to the report.",
+      );
+    } catch (error) {
+      console.error("Save drawing failed:", error);
+      Alert.alert("Error", "Failed to save the edited image.");
+    } finally {
+      setIsSavingEditedImage(false);
+    }
+  };
+
+  const getImageSize = (uri: string) => {
+    return new Promise<{ width: number; height: number }>((resolve, reject) => {
+      Image.getSize(
+        uri,
+        (width, height) => resolve({ width, height }),
+        (error) => reject(error),
+      );
+    });
+  };
+
+  const getEditableImageUri = async (uri: string) => {
+    if (!uri.startsWith("http")) return uri;
+
+    const extension = getMediaExtension(uri, "image") || "jpg";
+    const localPath = `${FileSystem.cacheDirectory}crop_${Date.now()}.${extension}`;
+    const downloaded = await FileSystem.downloadAsync(uri, localPath);
+
+    return downloaded.uri;
+  };
+
+  const handleCropSelectedImage = async () => {
+    try {
+      if (selectedMedia?.type !== "image" || selectedMediaIndex === null) {
+        Alert.alert("Not Available", "Only images can be cropped.");
+        return;
+      }
+
+      setIsSavingEditedImage(true);
+
+      // This crops the CURRENT image already opened in the app.
+      // It does NOT open the gallery.
+      // Since expo-image-manipulator has no built-in drag crop UI,
+      // this performs a safe center crop using 80% of the original image.
+      const editableUri = await getEditableImageUri(selectedMedia.url);
+      const { width, height } = await getImageSize(editableUri);
+
+      const cropScale = 0.8;
+      const cropWidth = Math.max(1, Math.floor(width * cropScale));
+      const cropHeight = Math.max(1, Math.floor(height * cropScale));
+      const originX = Math.max(0, Math.floor((width - cropWidth) / 2));
+      const originY = Math.max(0, Math.floor((height - cropHeight) / 2));
+
+      const cropResult = await ImageManipulator.manipulateAsync(
+        editableUri,
+        [
+          {
+            crop: {
+              originX,
+              originY,
+              width: cropWidth,
+              height: cropHeight,
+            },
+          },
+        ],
+        {
+          compress: 0.9,
+          format: ImageManipulator.SaveFormat.JPEG,
+        },
+      );
+
+      replaceSelectedImage(cropResult.uri);
+      resetImageEditor();
+
+      Alert.alert(
+        "Cropped Locally",
+        "The current image was center-cropped. Tap UPDATE to save it to the report.",
+      );
+    } catch (error) {
+      console.error("Crop image failed:", error);
+      Alert.alert("Error", "Failed to crop the current image.");
+    } finally {
+      setIsSavingEditedImage(false);
     }
   };
 
@@ -1034,6 +1220,21 @@ export default function ItemDetailsScreen() {
         },
       },
       {
+        text: "Choose & Crop Photo",
+        onPress: async () => {
+          let result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ["images"],
+            allowsEditing: true,
+            quality: 0.9,
+          });
+
+          if (!result.canceled) {
+            const processedUri = await processMediaAsset(result.assets[0].uri);
+            setImages((prev) => [...prev, processedUri]);
+          }
+        },
+      },
+      {
         text: "Cancel",
         style: "cancel",
       },
@@ -1042,6 +1243,21 @@ export default function ItemDetailsScreen() {
 
   const handleRemoveMedia = (indexToRemove: number) => {
     setImages((prev) => prev.filter((_, idx) => idx !== indexToRemove));
+  };
+
+  const handleSetMediaAsFirst = (indexToMove: number) => {
+    setImages((prevImages) => {
+      if (indexToMove <= 0 || indexToMove >= prevImages.length) {
+        return prevImages;
+      }
+
+      const updatedImages = [...prevImages];
+      const selectedImage = updatedImages.splice(indexToMove, 1)[0];
+
+      return [selectedImage, ...updatedImages];
+    });
+
+    setSelectedMediaIndex(0);
   };
 
   // --- 3. HANDLE DELETE ---
@@ -1410,23 +1626,19 @@ export default function ItemDetailsScreen() {
           <View style={styles.mediaContainer}>
             {images.map((mediaUrl, index) => {
               const mediaType = isVideo(mediaUrl) ? "video" : "image";
-
               return (
-                <View
-                  key={`${mediaUrl}-${index}`}
-                  style={styles.videoThumbnailContainer}
-                >
+                <View key={index} style={styles.videoThumbnailContainer}>
                   <TouchableOpacity
                     activeOpacity={0.8}
-                    onPress={() =>
-                      setSelectedMedia({ url: mediaUrl, type: mediaType })
-                    }
+                    onPress={() => {
+                      setSelectedMediaIndex(index);
+                      setSelectedMedia({ url: mediaUrl, type: mediaType });
+                    }}
                   >
                     <Image
                       source={{ uri: mediaUrl }}
                       style={styles.mediaThumbnail}
                     />
-
                     {mediaType === "video" && (
                       <View style={styles.playIconOverlay}>
                         <Ionicons
@@ -1505,7 +1717,7 @@ export default function ItemDetailsScreen() {
         <View style={styles.fullScreenOverlay}>
           <TouchableOpacity
             style={styles.closeModalBtn}
-            onPress={() => setSelectedMedia(null)}
+            onPress={handleCloseMediaViewer}
           >
             <Ionicons name="close" size={36} color="#FFFFFF" />
           </TouchableOpacity>
@@ -1534,11 +1746,119 @@ export default function ItemDetailsScreen() {
               nativeControls
             />
           ) : (
-            <Image
-              source={{ uri: selectedMedia?.url }}
-              style={styles.fullScreenMedia}
-              resizeMode="contain"
-            />
+            <View
+              ref={editImageRef}
+              collapsable={false}
+              style={styles.editImageCanvas}
+              onStartShouldSetResponder={() => isDrawingMode}
+              onMoveShouldSetResponder={() => isDrawingMode}
+              onResponderGrant={handleDrawStart}
+              onResponderMove={handleDrawMove}
+              onResponderRelease={handleDrawEnd}
+            >
+              <Image
+                source={{ uri: selectedMedia?.url }}
+                style={styles.fullScreenMedia}
+                resizeMode="contain"
+              />
+
+              {isDrawingMode && (
+                <Svg style={StyleSheet.absoluteFill}>
+                  {drawingPaths.map((path, index) => (
+                    <Path
+                      key={`${path}-${index}`}
+                      d={path}
+                      stroke="#FF2D2D"
+                      strokeWidth={5}
+                      fill="none"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  ))}
+
+                  {currentPath ? (
+                    <Path
+                      d={currentPath}
+                      stroke="#FF2D2D"
+                      strokeWidth={5}
+                      fill="none"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  ) : null}
+                </Svg>
+              )}
+            </View>
+          )}
+
+          {selectedMedia?.type === "image" && (
+            <View style={styles.editToolbar}>
+              <TouchableOpacity
+                style={styles.editToolButton}
+                disabled={isSavingEditedImage}
+                onPress={handleCropSelectedImage}
+              >
+                <Ionicons name="crop-outline" size={18} color="#FFF" />
+                <Text style={styles.editToolText}>Crop Center</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.editToolButton,
+                  isDrawingMode && styles.editToolButtonActive,
+                ]}
+                disabled={isSavingEditedImage}
+                onPress={() => setIsDrawingMode((prev) => !prev)}
+              >
+                <Ionicons name="brush-outline" size={18} color="#FFF" />
+                <Text style={styles.editToolText}>
+                  {isDrawingMode ? "Stop Draw" : "Draw"}
+                </Text>
+              </TouchableOpacity>
+
+              {isDrawingMode && (
+                <>
+                  <TouchableOpacity
+                    style={styles.editToolButton}
+                    disabled={isSavingEditedImage}
+                    onPress={handleUndoDrawing}
+                  >
+                    <Ionicons
+                      name="arrow-undo-outline"
+                      size={18}
+                      color="#FFF"
+                    />
+                    <Text style={styles.editToolText}>Undo</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.editToolButton}
+                    disabled={isSavingEditedImage}
+                    onPress={handleClearDrawing}
+                  >
+                    <Ionicons name="trash-outline" size={18} color="#FFF" />
+                    <Text style={styles.editToolText}>Clear</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.saveEditButton}
+                    disabled={isSavingEditedImage}
+                    onPress={handleSaveDrawing}
+                  >
+                    {isSavingEditedImage ? (
+                      <ActivityIndicator color="#FFF" size="small" />
+                    ) : (
+                      <Ionicons
+                        name="checkmark-outline"
+                        size={18}
+                        color="#FFF"
+                      />
+                    )}
+                    <Text style={styles.editToolText}>Save</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
           )}
         </View>
       </Modal>
@@ -1567,48 +1887,6 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     minHeight: 40,
   },
-
-  firstMediaBadge: {
-    position: "absolute",
-    top: 6,
-    left: 6,
-    backgroundColor: "rgba(91, 127, 31, 0.95)",
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    zIndex: 3,
-  },
-
-  firstMediaBadgeText: {
-    color: "#FFF",
-    fontSize: 10,
-    fontWeight: "700",
-  },
-
-  setFirstMediaBtn: {
-    position: "absolute",
-    bottom: 6,
-    left: 6,
-    right: 6,
-    backgroundColor: "rgba(0, 0, 0, 0.75)",
-    borderRadius: 6,
-    paddingVertical: 5,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 4,
-    zIndex: 3,
-  },
-
-  setFirstMediaText: {
-    color: "#FFF",
-    fontSize: 10,
-    fontWeight: "700",
-  },
-
   mainTitle: {
     fontSize: 14,
     fontWeight: "bold",
@@ -1757,6 +2035,44 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "rgba(0,0,0,0.3)",
     borderRadius: 8,
+  },
+
+  firstMediaBadge: {
+    position: "absolute",
+    top: 6,
+    left: 6,
+    backgroundColor: "rgba(91, 127, 31, 0.95)",
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    zIndex: 3,
+  },
+  firstMediaBadgeText: {
+    color: "#FFF",
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  setFirstMediaBtn: {
+    position: "absolute",
+    bottom: 6,
+    left: 6,
+    right: 6,
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
+    borderRadius: 6,
+    paddingVertical: 5,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 4,
+    zIndex: 3,
+  },
+  setFirstMediaText: {
+    color: "#FFF",
+    fontSize: 10,
+    fontWeight: "700",
   },
 
   removeMediaBadge: {
@@ -1923,6 +2239,51 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.45)",
     justifyContent: "center",
     alignItems: "center",
+  },
+  editImageCanvas: {
+    width: "100%",
+    height: "100%",
+    backgroundColor: "#000000",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  editToolbar: {
+    position: "absolute",
+    bottom: Platform.OS === "ios" ? 35 : 25,
+    left: 12,
+    right: 12,
+    zIndex: 20,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  editToolButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.75)",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 5,
+  },
+  editToolButtonActive: {
+    backgroundColor: "rgba(255,45,45,0.85)",
+  },
+  saveEditButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#5B7F1F",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 5,
+  },
+  editToolText: {
+    color: "#FFF",
+    fontSize: 12,
+    fontWeight: "700",
   },
   fullScreenMedia: { width: "100%", height: "100%" },
 });

@@ -33,13 +33,19 @@ import { SyncManager } from "../../../lib/SyncManager";
 const ITEM_TYPES = [
   "Sanitary",
   "Electrical",
-  "Appliance",
-  "Fixture",
-  "Furniture",
+  "Appliances",
+  "Fixtures",
+  "Furnitures",
+  "Kitchenware",
+  "Electronics",
+  "Linens",
+  "Decorations",
+  "Cleaning Tools",
+  "Keys & Access",
   "Area",
 ];
 
-const MAX_MEDIA_FILES = 3;
+const MAX_MEDIA_FILES = 20;
 
 const AUTO_COMPLETE_SUGGESTIONS = [
   // Appliances
@@ -837,7 +843,7 @@ export default function CreateItemScreen() {
         if (remainingSlots <= 0) {
           Alert.alert(
             "Limit Reached",
-            "You can only upload up to 3 files per item.",
+            "You can only upload up to 20 files per item.",
           );
           return;
         }
@@ -883,7 +889,7 @@ export default function CreateItemScreen() {
         if (selectedMedia.length >= MAX_MEDIA_FILES) {
           Alert.alert(
             "Limit Reached",
-            "You can only upload up to 3 files per item.",
+            "You can only upload up to 20 files per item.",
           );
           return;
         }

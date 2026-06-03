@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -12,7 +12,8 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { api } from "../../../lib/api"; // Make sure this path is correct!
+import { useAuth } from "../../../hooks/useAuth";
+import { api } from "../../../lib/api";
 
 const REPORT_CATEGORIES = [
   { name: "Turnover Report", requiresContract: false },
@@ -24,9 +25,35 @@ const REPORT_CATEGORIES = [
 
 export default function ViewAllReportsScreen() {
   const { property_id } = useLocalSearchParams();
-  const [isChecking, setIsChecking] = useState(false); // To prevent spam-clicking
+  const { user } = useAuth();
 
-  // 1. The actual navigation function (only called if the report exists!)
+  const [isChecking, setIsChecking] = useState(false);
+
+  const userDepartment = String(
+    user?.department || user?.department_name || "",
+  ).trim();
+
+  const visibleReportCategories = useMemo(() => {
+    if (
+      userDepartment === "Property Management" ||
+      userDepartment === "Administration"
+    ) {
+      return REPORT_CATEGORIES;
+    }
+
+    if (userDepartment === "Leasing") {
+      return REPORT_CATEGORIES.filter(
+        (report) => report.name !== "Turnover Report",
+      );
+    }
+
+    // Default fallback if department is missing:
+    // hide Turnover Report to avoid unauthorized access.
+    return REPORT_CATEGORIES.filter(
+      (report) => report.name !== "Turnover Report",
+    );
+  }, [userDepartment]);
+
   const navigateToReport = (reportName: string, hasContract: boolean) => {
     router.push(
       `/(tabs)/property/view-report?property_id=${property_id}&report_type=${encodeURIComponent(
@@ -35,36 +62,35 @@ export default function ViewAllReportsScreen() {
     );
   };
 
-  // 2. NEW FUNCTION: Check database before navigating
   const checkReportExistsAndNavigate = async (
     reportName: string,
     hasContract: boolean,
   ) => {
     try {
       setIsChecking(true);
-      // Clean the name (e.g., "Turnover Report" -> "Turnover") to match DB ENUM
+
       const cleanReportType = reportName.replace(" Report", "");
 
       await api.get(`/pm/reports/latest-id`, {
         params: {
-          property_id: property_id,
+          property_id,
           report_type: cleanReportType,
         },
       });
 
-      // If the API doesn't throw a 404 error, the report exists! We can navigate.
       navigateToReport(reportName, hasContract);
     } catch (error: any) {
-      // If it's a 404, it means no report was found in the database
       if (error.response?.status === 404) {
         Alert.alert(
           "No Report Found",
           `There is no ${reportName} recorded yet. Please create one first.`,
           [
-            { text: "Cancel", style: "cancel" },
+            {
+              text: "Cancel",
+              style: "cancel",
+            },
             {
               text: "Create Report",
-              // Conveniently route them straight to the creation screen!
               onPress: () =>
                 router.push(
                   `/(tabs)/property/create-report?property_id=${property_id}`,
@@ -73,6 +99,7 @@ export default function ViewAllReportsScreen() {
           ],
         );
       } else {
+        console.error("Report check error:", error);
         Alert.alert(
           "Error",
           "Could not check report status. Please try again.",
@@ -83,17 +110,17 @@ export default function ViewAllReportsScreen() {
     }
   };
 
-  // 3. Handle the initial click
-  const handleReportClick = (report: any) => {
-    if (isChecking) return; // Prevent double-clicks
+  const handleReportClick = (report: {
+    name: string;
+    requiresContract: boolean;
+  }) => {
+    if (isChecking) return;
 
-    // Check existence and navigate immediately for ALL reports
     checkReportExistsAndNavigate(report.name, report.requiresContract);
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Show a full-screen loading overlay if checking the database */}
       {isChecking && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color="#8BC34A" />
@@ -111,6 +138,10 @@ export default function ViewAllReportsScreen() {
 
       <View style={styles.titleContainer}>
         <Text style={styles.titleText}>ALL REPORTS</Text>
+
+        {userDepartment ? (
+          <Text style={styles.departmentText}>{userDepartment}</Text>
+        ) : null}
       </View>
 
       <View style={styles.actionRow}>
@@ -127,9 +158,9 @@ export default function ViewAllReportsScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {REPORT_CATEGORIES.map((report, index) => (
+        {visibleReportCategories.map((report, index) => (
           <TouchableOpacity
-            key={index}
+            key={`${report.name}-${index}`}
             style={styles.reportCard}
             activeOpacity={0.8}
             onPress={() => handleReportClick(report)}
@@ -137,12 +168,19 @@ export default function ViewAllReportsScreen() {
             <Text style={styles.reportCardText}>{report.name}</Text>
           </TouchableOpacity>
         ))}
+
+        {visibleReportCategories.length === 0 && (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyStateText}>
+              No report categories available for your department.
+            </Text>
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-// --- STYLES ---
 const styles = StyleSheet.create({
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -151,34 +189,48 @@ const styles = StyleSheet.create({
     alignItems: "center",
     zIndex: 999,
   },
+
   container: {
     flex: 1,
     backgroundColor: "#FFFFFF",
   },
+
   topNav: {
     paddingHorizontal: 15,
     paddingTop: 10,
     alignItems: "flex-start",
   },
+
   backButton: {
     padding: 5,
   },
+
   titleContainer: {
     alignItems: "center",
     marginTop: 10,
     marginBottom: 20,
   },
+
   titleText: {
     fontSize: 22,
     fontWeight: "bold",
     color: "#666666",
     letterSpacing: 0.5,
   },
+
+  departmentText: {
+    marginTop: 5,
+    fontSize: 12,
+    color: "#888888",
+    fontWeight: "500",
+  },
+
   actionRow: {
     alignItems: "flex-end",
     paddingHorizontal: 25,
     marginBottom: 20,
   },
+
   createReportBtn: {
     borderWidth: 1.5,
     borderColor: "#8BC34A",
@@ -198,15 +250,18 @@ const styles = StyleSheet.create({
       },
     }),
   },
+
   createReportBtnText: {
     color: "#8BC34A",
     fontSize: 12,
     fontWeight: "600",
   },
+
   scrollContent: {
     paddingHorizontal: 25,
     paddingBottom: 50,
   },
+
   reportCard: {
     backgroundColor: "#64B5F6",
     paddingVertical: 18,
@@ -225,9 +280,21 @@ const styles = StyleSheet.create({
       },
     }),
   },
+
   reportCardText: {
     color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "500",
+  },
+
+  emptyState: {
+    paddingVertical: 30,
+    alignItems: "center",
+  },
+
+  emptyStateText: {
+    fontSize: 14,
+    color: "#777777",
+    textAlign: "center",
   },
 });

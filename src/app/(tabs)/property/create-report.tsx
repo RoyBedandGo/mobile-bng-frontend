@@ -100,6 +100,10 @@ export default function CreateReportScreen() {
   const { property_id } = useLocalSearchParams();
   const { user } = useAuth();
 
+  const currentUserDepartment = String(
+    user?.department || user?.department_name || "",
+  ).trim();
+
   // 1. Raw Data States (From Backend)
   const [propertyReports, setPropertyReports] = useState<any[]>([]); // All reports for property
   const [contractReports, setContractReports] = useState<any[]>([]); // Linked reports
@@ -130,12 +134,37 @@ export default function CreateReportScreen() {
       try {
         setIsLoadingData(true);
 
-        // A. Fetch Users
+        /// A. Fetch Users for Report OIC
         const userRes = await api.get("/users/allUsers");
-        const pmUsers = userRes.data.users
-          .filter((user: any) => user.department === "Property Management")
-          .map((user: any) => ({ label: user.name, value: user.id }));
-        setOicList(pmUsers);
+
+        const allUsers = Array.isArray(userRes.data.users)
+          ? userRes.data.users
+          : [];
+
+        let filteredUsers = allUsers;
+
+        if (currentUserDepartment === "Property Management") {
+          filteredUsers = allUsers.filter(
+            (item: any) => item.department === "Property Management",
+          );
+        } else if (currentUserDepartment === "Leasing") {
+          filteredUsers = allUsers.filter(
+            (item: any) => item.department === "Leasing",
+          );
+        } else if (currentUserDepartment === "Administration") {
+          filteredUsers = allUsers;
+        } else {
+          filteredUsers = allUsers.filter(
+            (item: any) => item.department === currentUserDepartment,
+          );
+        }
+
+        const mappedOicUsers = filteredUsers.map((item: any) => ({
+          label: item.name,
+          value: item.id,
+        }));
+
+        setOicList(mappedOicUsers);
 
         // B. Fetch Previous Reports (For Copying & Turnover validation)
         let allReports: any[] = [];
@@ -200,7 +229,7 @@ export default function CreateReportScreen() {
     };
 
     fetchInitialData();
-  }, [property_id]);
+  }, [property_id, currentUserDepartment]);
 
   // --- DYNAMIC REPORT TYPE FILTERING ---
   // Every time the user changes the Contract, recalculate what Reports they are allowed to make!
